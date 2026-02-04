@@ -17,12 +17,13 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
+# --- GESTIÓN SEGURA DE API KEY ---
 try:
-    # Intenta leer la clave desde los Secretos de Streamlit
+    # Intenta leer desde los secretos de Streamlit (Nube)
     API_KEY = st.secrets["GEMINI_API_KEY"]
 except:
-    # Si falla (ej. en tu PC), usa un valor vacío o manejo de error
-    API_KEY = "NO_DETECTADA"
+    # Si falla, avisa (o puedes poner tu clave aquí temporalmente si pruebas en local)
+    API_KEY = "FALTA_CONFIGURAR_SECRETO"
 
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
@@ -45,7 +46,7 @@ def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
     creds = None
     
-    # 1. Intentar leer desde SECRETOS DE STREAMLIT (NUBE)
+    # 1. Intentar leer desde SECRETOS DE STREAMLIT (Nube)
     try:
         if "gcp_service_account" in st.secrets:
             creds = service_account.Credentials.from_service_account_info(
@@ -58,7 +59,7 @@ def obtener_servicios():
         try:
             creds = service_account.Credentials.from_service_account_file('secretos.json', scopes=scopes)
         except Exception as e:
-            st.error(f"No se encontraron credenciales (ni en Secretos ni en local): {e}")
+            # st.error(f"No se encontraron credenciales: {e}") # Ocultamos error visual
             return None, None
 
     try:
@@ -72,7 +73,7 @@ def registrar_en_control(datos_fila):
     if not sheets: return False
     try:
         sheets.spreadsheets().values().append(
-            spreadsheetId=ID_SHEET_CONTROL, range='"historial"!A:J',
+            spreadsheetId=ID_SHEET_CONTROL, range="'historial'!A:J",
             valueInputOption="USER_ENTERED", body={"values": [datos_fila]}
         ).execute()
         return True
@@ -129,8 +130,8 @@ def leer_sheet_seguro(pestaña):
 
 def procesar_guia_ia(pdf_bytes):
     try:
-        if "PEGA_AQUI" in API_KEY or len(API_KEY) < 10:
-            st.error("⚠️ FALTAL LA API KEY: Edita la línea 20 del código.")
+        if "FALTA" in API_KEY:
+            st.error("⚠️ FALTAN LAS CREDENCIALES DE GEMINI EN 'SECRETS'")
             return None
         genai.configure(api_key=API_KEY.strip())
     except Exception as e:
@@ -145,7 +146,22 @@ def procesar_guia_ia(pdf_bytes):
         st.error(f"❌ Error conectando con Gemini: {e}")
         return None
 
-    prompt = """Extrae la información de la guía de remisión a este JSON estricto: \n    {\n        \"fecha\": \"dd/mm/yyyy\", \n        \"serie\": \"T001-000000\", \n        \"vehiculo\": \"PLACA\", \n        \"punto_partida\": \"Dirección completa\", \n        \"punto_llegada\": \"Dirección completa\", \n        \"destinatario\": \"Razón Social\", \n        \"items\": [{\"desc\": \"Descripción del bien\", \"cant\": \"0\", \"um\": \"UNIDAD\", \"peso\": \"0\"}]\n    }\n    REGLAS IMPORTANTES:\n    1. Revisa el campo \"OBSERVACION\". Si encuentras 'FUNDO' o 'PLANTA' (Ej: \"FUNDO MILAGRITOS\"), extráelo.\n    2. Ignora texto de residuos/envases en la observación. Quédate SOLO con el lugar.\n    3. Concatena ese nombre al final de 'punto_partida' separado por un guion " - ".\n    """    
+    prompt = """Extrae la información de la guía de remisión a este JSON estricto: 
+    {
+        "fecha": "dd/mm/yyyy", 
+        "serie": "T001-000000", 
+        "vehiculo": "PLACA", 
+        "punto_partida": "Dirección completa", 
+        "punto_llegada": "Dirección completa", 
+        "destinatario": "Razón Social", 
+        "items": [{"desc": "Descripción del bien", "cant": "0", "um": "UNIDAD", "peso": "0"}]
+    }
+    REGLAS IMPORTANTES:
+    1. Revisa el campo "OBSERVACION". Si encuentras 'FUNDO' o 'PLANTA' (Ej: "FUNDO MILAGRITOS"), extráelo.
+    2. Ignora texto de residuos/envases en la observación. Quédate SOLO con el lugar.
+    3. Concatena ese nombre al final de 'punto_partida' separado por un guion " - ".
+    """
+    
     try:
         res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
         match = re.search(r'\{.*\}', res.text.replace("```json", "").replace("```", ""), re.DOTALL)
@@ -215,8 +231,9 @@ if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
     st.markdown("### 2. Validación de Datos")
     
-c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
+    
     fecha_base = normalizar_fecha(ocr.get('fecha'))
     cont_f = c2.container()
     
@@ -225,7 +242,7 @@ c1, c2, c3, c4 = st.columns(4)
     tipo_operacion_simple = "" 
     try:
         if "Comercialización" in opt_f: 
-            f_calc = (datetime.strptime(fecha_base, "%d/%m/%Y") + timedelta(days=2)).strftime("%d/%m/%Y")
+            f_calc = (datetime.strptime(fecha_base, "%d/%m/%Y")+timedelta(days=2)).strftime("%d/%m/%Y")
             tipo_operacion_simple = "Comercialización"
         else: 
             f_calc = obtener_fin_de_mes(fecha_base)
@@ -246,7 +263,7 @@ c1, c2, c3, c4 = st.columns(4)
     v_items = st.data_editor(st.session_state['df_items'], num_rows="dynamic", use_container_width=True,
         column_config={"guia_origen": st.column_config.TextColumn("Guía", disabled=True)})
     
-c_a, c_b = st.columns(2)
+    c_a, c_b = st.columns(2)
     with c_a:
         v_emi = st.selectbox("Emisor", repo['emisores']['EMPRESA'].unique() if not repo['emisores'].empty else [])
         v_ruc_e, v_reg_e = "", ""
@@ -358,4 +375,4 @@ c_a, c_b = st.columns(2)
                 else: st.error("Error al guardar.")
 
 st.divider()
-st.caption("--- FIN DEL SISTEMA v3.7 ---")
+st.caption("--- FIN DEL SISTEMA v3.8 ---")
