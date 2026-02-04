@@ -17,8 +17,12 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# ⚠️ PEGA TU API KEY AQUÍ
-API_KEY = "AIzaSyB77IabSlG2eo8_w99_bMbplnrPCynV-Ik" 
+try:
+    # Intenta leer la clave desde los Secretos de Streamlit
+    API_KEY = st.secrets["GEMINI_API_KEY"]
+except:
+    # Si falla (ej. en tu PC), usa un valor vacío o manejo de error
+    API_KEY = "NO_DETECTADA"
 
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
