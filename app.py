@@ -132,29 +132,37 @@ def procesar_guia_ia(pdf_bytes):
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    # === FUERZA BRUTA PARA MODELO ===
+    # === RASTREADOR DE MODELOS (V4.4) ===
     model = None
-    errores_conexion = []
+    lista_modelos_visibles = []
     
-    # Intento 1: El estándar Flash 1.5 (El mejor gratis)
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-    except Exception as e: errores_conexion.append(str(e))
-    
-    # Intento 2: Si falla, probar con alias alternativo
-    if not model:
-        try:
-            model = genai.GenerativeModel("models/gemini-1.5-flash")
-        except Exception as e: errores_conexion.append(str(e))
-
-    # Intento 3: Último recurso (Pro)
-    if not model:
-        try:
-            model = genai.GenerativeModel("gemini-1.5-pro")
-        except Exception as e: errores_conexion.append(str(e))
+        # 1. Pedimos la lista real a Google
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                lista_modelos_visibles.append(m.name)
         
-    if not model:
-        st.error(f"❌ No se pudo conectar con ningún modelo Gemini. Errores: {errores_conexion}")
+        # 2. Buscamos el mejor candidato (FLASH 1.5)
+        # Prioridad 1: Que tenga '1.5' y 'flash'
+        candidato = next((m for m in lista_modelos_visibles if 'flash' in m and '1.5' in m), None)
+        
+        # Prioridad 2: Cualquiera que diga 'flash' (aunque sea 2.0, si no hay más remedio)
+        if not candidato:
+            candidato = next((m for m in lista_modelos_visibles if 'flash' in m), None)
+            
+        # Prioridad 3: Gemini Pro 1.5 (Backup potente)
+        if not candidato:
+            candidato = next((m for m in lista_modelos_visibles if 'pro' in m and '1.5' in m), None)
+
+        if candidato:
+            # st.toast(f"Usando modelo: {candidato}") # Aviso silencioso de éxito
+            model = genai.GenerativeModel(candidato)
+        else:
+            st.warning(f"⚠️ No encontré modelos 'Flash'. Disponibles: {lista_modelos_visibles}")
+            return None
+
+    except Exception as e:
+        st.error(f"❌ Error buscando modelos: {e}")
         return None
 
     prompt = """Extrae a JSON estricto: 
@@ -179,10 +187,10 @@ def procesar_guia_ia(pdf_bytes):
         return None
     except Exception as e:
         if "429" in str(e):
-             st.warning("⏳ Límite de velocidad: Esperando unos segundos...")
-             time.sleep(5) # Pausa de emergencia extra
+             st.warning("⏳ Velocidad: Pausa automática activada...")
+             time.sleep(5) 
              return None
-        st.error(f"❌ Error lectura: {e}")
+        st.error(f"❌ Error lectura ({candidato}): {e}")
         return None
 
 # ==========================================
@@ -207,7 +215,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("🔄 Reiniciar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (v4.3)")
+st.title("Generador de Certificados (v4.4)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -227,8 +235,7 @@ if archivos:
         total = len(archivos)
         
         for i, arc in enumerate(archivos):
-            # === FRENO DE MANO PARA EVITAR ERROR 429 ===
-            # Pausa obligatoria de 4 segundos entre archivos
+            # === FRENO DE MANO ===
             if i > 0: time.sleep(4) 
             
             d = procesar_guia_ia(arc.read())
@@ -253,7 +260,7 @@ if archivos:
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
             st.session_state['df_items'] = df
             st.success(f"✅ Procesado: {total-errores} correctos.")
-        else: st.error("❌ No se pudieron extraer datos (Posible bloqueo de velocidad o PDF ilegible).")
+        else: st.error("❌ No se pudieron extraer datos.")
 
 # EDICIÓN (Resto del código igual)
 if st.session_state['ocr_data']:
@@ -382,4 +389,4 @@ if st.session_state['ocr_data']:
                 f = [d['fec_emis'], d['emi'], d['tit'], d['cli'], d['ruc_c'], d['guia'], "FINALIZADO", d['cert_name'], u_d, u_p]
                 if registrar_en_control(f): st.success("✅ Registrado"); st.balloons()
 
-st.caption("--- FIN DEL SISTEMA V4.3 (MODO TANQUE) ---")
+st.caption("--- FIN DEL SISTEMA V4.4 (RASTREADOR INTELIGENTE) ---")
