@@ -17,13 +17,27 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# --- GESTIÓN SEGURA DE API KEY ---
+# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA v3.9) ---
+# Esta lógica busca la clave donde sea que haya caído en los secretos
+API_KEY = None
+
+# Intento 1: Buscar en la raíz (donde debería estar)
 try:
-    # Intenta leer desde los secretos de Streamlit (Nube)
-    API_KEY = st.secrets["GEMINI_API_KEY"]
-except:
-    # Si falla, avisa (o puedes poner tu clave aquí temporalmente si pruebas en local)
-    API_KEY = "FALTA_CONFIGURAR_SECRETO"
+    if "GEMINI_API_KEY" in st.secrets:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+except: pass
+
+# Intento 2: Buscar dentro del bloque de Google (por si se pegó abajo)
+if not API_KEY:
+    try:
+        if "gcp_service_account" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcp_service_account"]:
+            API_KEY = st.secrets["gcp_service_account"]["GEMINI_API_KEY"]
+    except: pass
+
+# Intento 3: Clave manual (solo para pruebas locales de emergencia)
+if not API_KEY:
+    # Si todo falla, el sistema avisará, pero no se romperá al inicio
+    API_KEY = "FALTA_CONFIGURAR"
 
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
@@ -59,7 +73,6 @@ def obtener_servicios():
         try:
             creds = service_account.Credentials.from_service_account_file('secretos.json', scopes=scopes)
         except Exception as e:
-            # st.error(f"No se encontraron credenciales: {e}") # Ocultamos error visual
             return None, None
 
     try:
@@ -130,12 +143,12 @@ def leer_sheet_seguro(pestaña):
 
 def procesar_guia_ia(pdf_bytes):
     try:
-        if "FALTA" in API_KEY:
-            st.error("⚠️ FALTAN LAS CREDENCIALES DE GEMINI EN 'SECRETS'")
+        if "FALTA" in API_KEY or API_KEY is None:
+            st.error("⚠️ ERROR CRÍTICO: No se detectó la GEMINI_API_KEY en los secretos. Revisa la configuración en Streamlit Cloud.")
             return None
         genai.configure(api_key=API_KEY.strip())
     except Exception as e:
-        st.error(f"❌ Error API: {e}")
+        st.error(f"❌ Error Configuración API: {e}")
         return None
 
     try:
@@ -233,7 +246,6 @@ if st.session_state['ocr_data']:
     
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
-    
     fecha_base = normalizar_fecha(ocr.get('fecha'))
     cont_f = c2.container()
     
@@ -375,4 +387,4 @@ if st.session_state['ocr_data']:
                 else: st.error("Error al guardar.")
 
 st.divider()
-st.caption("--- FIN DEL SISTEMA v3.8 ---")
+st.caption("--- FIN DEL SISTEMA v3.9 ---")
