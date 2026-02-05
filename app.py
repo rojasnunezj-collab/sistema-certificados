@@ -13,35 +13,30 @@ from googleapiclient.http import MediaIoBaseDownload
 from docxtpl import DocxTemplate
 
 # ==========================================
-# 1. CONFIGURACIÓN DE LA PÁGINA
+# 1. CONFIGURACIÓN
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# ==========================================
-# 2. GESTIÓN DE CREDENCIALES (API KEY)
-# ==========================================
+# --- CREDENCIALES ---
 API_KEY = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
         API_KEY = st.secrets["GEMINI_API_KEY"]
-except:
-    pass
+except: pass
 
 if not API_KEY:
     try:
         if "gcp_service_account" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcp_service_account"]:
             API_KEY = st.secrets["gcp_service_account"]["GEMINI_API_KEY"]
-    except:
-        pass
+    except: pass
 
 if not API_KEY:
     API_KEY = "FALTA_CONFIGURAR"
 
-# IDs de las Hojas de Cálculo
+# IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
 
-# Plantillas Word
 PLANTILLAS = {
     "EPMI S.A.C.": {
         "Comercialización/Disposición Final": "1d09vmlBlW_4yjrrz5M1XM8WpCvzTI4f11pERDbxFvNE",
@@ -54,7 +49,7 @@ PLANTILLAS = {
 }
 
 # ==========================================
-# 3. FUNCIONES DE CONEXIÓN A GOOGLE
+# 2. CONEXIÓN GOOGLE
 # ==========================================
 def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -71,9 +66,7 @@ def obtener_servicios():
 
     try:
         return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
-    except Exception as e:
-        st.error(f"Error Google: {e}")
-        return None, None
+    except: return None, None
 
 def registrar_en_control(datos_fila):
     _, sheets = obtener_servicios()
@@ -84,12 +77,10 @@ def registrar_en_control(datos_fila):
             valueInputOption="USER_ENTERED", body={"values": [datos_fila]}
         ).execute()
         return True
-    except Exception as e:
-        st.error(f"Error Excel: {e}")
-        return False
+    except: return False
 
 # ==========================================
-# 4. FUNCIONES DE FORMATO
+# 3. FORMATOS
 # ==========================================
 def obtener_fin_de_mes(fecha_str):
     try:
@@ -133,46 +124,20 @@ def leer_sheet_seguro(pestaña):
     except: return pd.DataFrame()
 
 # ==========================================
-# 5. MOTOR DE IA (LA PARTE QUE PEDISTE ARREGLAR)
+# 4. INTELIGENCIA ARTIFICIAL (NÚCLEO BLINDADO)
 # ==========================================
 def procesar_guia_ia(pdf_bytes):
-    # 1. Configurar API
     try:
         if "FALTA" in API_KEY:
-            st.error("⚠️ Falta API Key")
+            st.error("Falta API KEY")
             return None
         genai.configure(api_key=API_KEY.strip())
-    except Exception as e:
-        st.error(f"Error Config: {e}")
-        return None
+    except: return None
 
-    # 2. SELECCIÓN DE MODELO (MODO DIRECTO - COMO EN LA VERSIÓN QUE FUNCIONABA)
-    # Buscamos 'flash' y '1.5' en la lista real de Google para no fallar
-    model = None
-    try:
-        lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # Prioridad: Gemini 1.5 Flash (Rápido y Gratis)
-        modelo_nombre = next((m for m in lista_modelos if 'flash' in m and '1.5' in m), None)
-        
-        # Si no está, cualquier Flash
-        if not modelo_nombre:
-             modelo_nombre = next((m for m in lista_modelos if 'flash' in m), None)
-        
-        # Si no, el primero que haya (Fallback)
-        if not modelo_nombre and lista_modelos:
-             modelo_nombre = lista_modelos[0]
-
-        if modelo_nombre:
-            model = genai.GenerativeModel(modelo_nombre)
-        else:
-            st.error("❌ No hay modelos disponibles en tu cuenta.")
-            return None
-    except Exception as e:
-        st.error(f"Error buscando modelo: {e}")
-        return None
-
-    # 3. PROMPT DETALLADO (PARA LEER BIEN LOS DATOS)
+    # ESTRATEGIA MULTIMODELO: Probamos 3 modelos diferentes en orden
+    # Si uno falla por velocidad, saltamos al siguiente.
+    modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
+    
     prompt = """
     Actúa como experto OCR. Analiza esta Guía de Remisión y extrae a JSON estricto:
     {
@@ -192,54 +157,54 @@ def procesar_guia_ia(pdf_bytes):
         ]
     }
     REGLAS CLAVE:
-    1. **TABLA:** Diferencia entre CANTIDAD (Enteros, Bultos, UND) y PESO (Decimales, KG, KGM). Pon cada uno en su campo.
-    2. **LUGAR:** Si en OBSERVACIONES dice "FUNDO X" o "PLANTA Y", agrégalo a punto_partida tras un guion.
+    1. TABLA: Diferencia entre CANTIDAD (Enteros, Bultos, UND) y PESO (Decimales, KG, KGM). Pon cada uno en su campo.
+    2. LUGAR: Si en OBSERVACIONES dice "FUNDO X" o "PLANTA Y", agrégalo a punto_partida tras un guion.
     3. Responde SOLO JSON.
     """
-    
-    # 4. EJECUCIÓN DIRECTA (SIN BUCLES NI REINTENTOS)
-    try:
-        # Pequeña pausa de seguridad de 2 segundos para no saturar
-        time.sleep(2) 
-        
-        res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
-        
-        # Limpieza y Parseo
-        texto_limpio = res.text.replace("```json", "").replace("```", "")
-        match = re.search(r'\{.*\}', texto_limpio, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        else:
-            return None
 
-    except Exception as e:
-        # Si da error 429 es velocidad, avisamos pero no loopeamos
-        if "429" in str(e):
-            st.warning("⏳ Velocidad alta: Espera 10 seg y prueba de nuevo.")
-        else:
-            st.error(f"❌ Error al leer: {e}")
-        return None
+    for modelo_nombre in modelos_a_probar:
+        try:
+            # Intentamos conectar con el modelo actual
+            model = genai.GenerativeModel(modelo_nombre)
+            
+            # Llamada a la API
+            res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
+            
+            # Limpieza
+            texto = res.text.replace("```json", "").replace("```", "")
+            match = re.search(r'\{.*\}', texto, re.DOTALL)
+            
+            if match:
+                # ¡ÉXITO! Devolvemos los datos y salimos del bucle
+                return json.loads(match.group(0))
+            
+        except Exception as e:
+            # Si falla, imprimimos un aviso pequeño y probamos el siguiente modelo
+            # st.caption(f"Reintentando con otro modelo... ({modelo_nombre} falló)")
+            time.sleep(1) # Pequeña pausa antes de cambiar de modelo
+            continue
+
+    # Si llegamos aquí, fallaron los 3 modelos
+    st.error("❌ Todos los modelos están ocupados. Espera 1 minuto.")
+    return None
 
 # ==========================================
-# 6. INTERFAZ GRÁFICA
+# 5. INTERFAZ
 # ==========================================
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
 
-# BARRA LATERAL
 with st.sidebar:
-    with st.expander("❓ Ayuda"):
+    with st.expander("Ayuda"):
         st.markdown("1. Sube PDF.\n2. Procesa.\n3. Descarga.")
-    st.divider()
-    st.header("⚙️ Configuración")
+    st.header("Configuración")
     empresa_firma = st.selectbox("Empresa", list(PLANTILLAS.keys()))
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
-    if st.button("🔄 Reiniciar"): st.cache_data.clear(); st.rerun()
+    if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (Versión Estable)")
+st.title("Generador de Certificados (V5.0 Multimodelo)")
 
-# Cargar Repositorios
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
         "emisores": leer_sheet_seguro("EMPRESAS"),
@@ -248,7 +213,6 @@ if 'repo_data' not in st.session_state:
     }
 repo = st.session_state['repo_data']
 
-# CARGA DE ARCHIVOS
 archivos = st.file_uploader("1. Subir Guías (PDF)", type=["pdf"], accept_multiple_files=True)
 
 if archivos:
@@ -259,7 +223,7 @@ if archivos:
         total = len(archivos)
         
         for i, arc in enumerate(archivos):
-            # Pausa entre archivos para evitar bloqueo
+            # Pausa de seguridad
             if i > 0: time.sleep(3)
             
             d = procesar_guia_ia(arc.read())
@@ -288,7 +252,7 @@ if archivos:
             st.success(f"✅ Procesado: {total-errores} correctos.")
         else: st.error("❌ No se pudieron extraer datos.")
 
-# VALIDACIÓN Y EDICIÓN
+# EDICIÓN
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
     st.markdown("### 2. Validación")
@@ -333,7 +297,7 @@ if st.session_state['ocr_data']:
                 v_ruc_e, v_reg_e = str(row_e['RUC']), str(row_e['REGISTRO'])
             except: pass
         st.caption(f"RUC: {v_ruc_e} | REG: {v_reg_e}")
-        v_tit = st.selectbox("Título Certificado", repo['servicios'].iloc[:,0].unique() if not repo['servicios'].empty else [])
+        v_tit = st.selectbox("Título", repo['servicios'].iloc[:,0].unique() if not repo['servicios'].empty else [])
 
     with c_b:
         v_cli = st.selectbox("Cliente", repo['clientes']['EMPRESA'].unique() if not repo['clientes'].empty else [])
@@ -350,7 +314,7 @@ if st.session_state['ocr_data']:
     dest_final = v_dest if "EPMI" not in str(v_dest).upper() else "EPMI S.A.C."
 
     st.divider()
-    tab1, tab2 = st.tabs(["1️⃣ Generar", "2️⃣ Registrar"])
+    tab1, tab2 = st.tabs(["Generar", "Registrar"])
 
     with tab1:
         c_gen, c_exc = st.columns(2)
@@ -412,5 +376,3 @@ if st.session_state['ocr_data']:
                 d = st.session_state['datos_log_pendientes']
                 f = [d['fec_emis'], d['emi'], d['tit'], d['cli'], d['ruc_c'], d['guia'], "FINALIZADO", d['cert_name'], u_d, u_p]
                 if registrar_en_control(f): st.success("✅ Registrado"); st.balloons()
-
-st.caption("--- SISTEMA V4.8 (ESTABLE) ---")
