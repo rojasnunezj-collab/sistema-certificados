@@ -17,7 +17,7 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA) ---
+# --- GESTIÓN DE API KEY ---
 API_KEY = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -136,7 +136,7 @@ def leer_sheet_seguro(pestaña):
 def procesar_guia_ia(pdf_bytes):
     try:
         if "FALTA" in API_KEY or API_KEY is None:
-            st.error("⚠️ ERROR: No se detectó la API KEY. Revisa los secretos.")
+            st.error("⚠️ ERROR: No se detectó la API KEY.")
             return None
         genai.configure(api_key=API_KEY.strip())
     except Exception as e:
@@ -144,26 +144,25 @@ def procesar_guia_ia(pdf_bytes):
         return None
 
     try:
-        # === SOLUCIÓN INTELIGENTE V4.1 ===
-        # 1. Obtenemos la lista real de modelos disponibles en tu cuenta
-        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # === CORRECCIÓN CRÍTICA V4.2 ===
+        # Obtenemos la lista de modelos DISPONIBLES para tu clave
+        lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        modelo_seleccionado = None
+        # 1. Buscamos 'gemini-1.5-flash' (El mejor gratuito)
+        # Usamos 'in' para que coincida con 'models/gemini-1.5-flash-latest' etc.
+        modelo_nombre = next((m for m in lista_modelos if '1.5' in m and 'flash' in m), None)
         
-        # 2. Buscamos específicamente "flash" y "1.5" (el bueno)
-        # Esto evita el "2.5" que tiene límite de 20 peticiones
-        modelo_seleccionado = next((m for m in modelos_disponibles if 'flash' in m and '1.5' in m), None)
+        # 2. Si falla, buscamos 'gemini-pro' (El clásico gratuito)
+        if not modelo_nombre:
+             modelo_nombre = next((m for m in lista_modelos if 'gemini-pro' in m and '1.5' not in m), None)
         
-        # 3. Si no encuentra el 1.5, buscamos "gemini-pro" (el clásico confiable)
-        if not modelo_seleccionado:
-             modelo_seleccionado = next((m for m in modelos_disponibles if 'gemini-pro' in m), None)
-             
-        # 4. Si todo falla, usamos el primero de la lista (último recurso)
-        if not modelo_seleccionado and modelos_disponibles:
-            modelo_seleccionado = modelos_disponibles[0]
+        # 3. Si no hay ninguno de esos, AVISAMOS en lugar de usar uno prohibido
+        if not modelo_nombre:
+            st.error(f"❌ No encontré modelos gratuitos compatibles. Disponibles: {lista_modelos}")
+            return None
             
-        # st.caption(f"🤖 Modelo usado: {modelo_seleccionado}") # Descomentar para ver cuál usa
-        model = genai.GenerativeModel(modelo_seleccionado)
+        # st.success(f"Conectado a: {modelo_nombre}") # Descomentar para ver cuál eligió
+        model = genai.GenerativeModel(modelo_nombre)
         
     except Exception as e:
         st.error(f"❌ Error conectando con Gemini: {e}")
@@ -191,6 +190,10 @@ def procesar_guia_ia(pdf_bytes):
         if match: return json.loads(match.group(0))
         return None
     except Exception as e:
+        # Capturamos el error 429 específico para dar un mensaje amigable
+        if "429" in str(e):
+             st.warning("⏳ Mucha velocidad: Espera 30 segundos antes de subir el siguiente PDF.")
+             return None
         st.error(f"❌ Fallo al leer PDF: {e}")
         return None
 
@@ -202,7 +205,6 @@ if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFra
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
 
 with st.sidebar:
-    # --- AYUDA INTEGRADA ---
     with st.expander("❓ ¿Cómo usar el sistema?"):
         st.markdown("""
         **1. Sube tus Guías:**
@@ -417,4 +419,4 @@ if st.session_state['ocr_data']:
                 else: st.error("Error al guardar.")
 
 st.divider()
-st.caption("--- FIN DEL SISTEMA v4.1 (AUTOMÁTICO MEJORADO) ---")
+st.caption("--- FIN DEL SISTEMA v4.2 (ANTI-ERROR PRO) ---")
