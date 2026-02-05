@@ -17,7 +17,7 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA v4.0) ---
+# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA) ---
 API_KEY = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -144,8 +144,27 @@ def procesar_guia_ia(pdf_bytes):
         return None
 
     try:
-        # CAMBIO CLAVE: USAR MODELO ESTABLE 1.5 FLASH (Mayor cuota gratis)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # === SOLUCIÓN INTELIGENTE V4.1 ===
+        # 1. Obtenemos la lista real de modelos disponibles en tu cuenta
+        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        modelo_seleccionado = None
+        
+        # 2. Buscamos específicamente "flash" y "1.5" (el bueno)
+        # Esto evita el "2.5" que tiene límite de 20 peticiones
+        modelo_seleccionado = next((m for m in modelos_disponibles if 'flash' in m and '1.5' in m), None)
+        
+        # 3. Si no encuentra el 1.5, buscamos "gemini-pro" (el clásico confiable)
+        if not modelo_seleccionado:
+             modelo_seleccionado = next((m for m in modelos_disponibles if 'gemini-pro' in m), None)
+             
+        # 4. Si todo falla, usamos el primero de la lista (último recurso)
+        if not modelo_seleccionado and modelos_disponibles:
+            modelo_seleccionado = modelos_disponibles[0]
+            
+        # st.caption(f"🤖 Modelo usado: {modelo_seleccionado}") # Descomentar para ver cuál usa
+        model = genai.GenerativeModel(modelo_seleccionado)
+        
     except Exception as e:
         st.error(f"❌ Error conectando con Gemini: {e}")
         return None
@@ -398,4 +417,4 @@ if st.session_state['ocr_data']:
                 else: st.error("Error al guardar.")
 
 st.divider()
-st.caption("--- FIN DEL SISTEMA v4.0 (GEMINI ESTABLE) ---")
+st.caption("--- FIN DEL SISTEMA v4.1 (AUTOMÁTICO MEJORADO) ---")
