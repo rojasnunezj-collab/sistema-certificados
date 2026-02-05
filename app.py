@@ -18,7 +18,7 @@ from docxtpl import DocxTemplate
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
 # ==========================================
-# 2. API KEY
+# 2. CREDENCIALES
 # ==========================================
 API_KEY = None
 try:
@@ -52,7 +52,7 @@ PLANTILLAS = {
 }
 
 # ==========================================
-# 3. CONEXIÓN
+# 3. CONEXIÓN GOOGLE DRIVE/SHEETS
 # ==========================================
 def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -127,18 +127,16 @@ def leer_sheet_seguro(pestaña):
     except: return pd.DataFrame()
 
 # ==========================================
-# 5. INTELIGENCIA ARTIFICIAL (CORREGIDA V7.0)
+# 5. INTELIGENCIA ARTIFICIAL (VERSIÓN ESTABLE)
 # ==========================================
 def procesar_guia_ia(pdf_bytes):
     try:
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    # --- CORRECCIÓN CRÍTICA ---
-    # Tu cuenta NO tiene 1.5, pero SI tiene 2.0.
-    # Usaremos gemini-2.0-flash explícitamente porque vimos que lo tienes disponible.
-    # EVITAMOS el 2.5 porque solo da 20 usos.
-    modelo_elegido = "gemini-2.0-flash" 
+    # USAMOS EL ALIAS GENÉRICO QUE APARECIÓ EN TU LISTA
+    # Este apunta a la versión estable (normalmente 1.5 Flash) que no tiene límite bajo.
+    modelo_elegido = "gemini-flash-latest"
 
     prompt = """
     Actúa como experto OCR. Analiza esta Guía de Remisión y extrae JSON estricto:
@@ -159,13 +157,12 @@ def procesar_guia_ia(pdf_bytes):
         ]
     }
     REGLAS:
-    1. Diferencia CANTIDAD (Enteros/Bultos) de PESO (Decimales/KG).
-    2. Si OBSERVACIONES tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida.
+    1. Diferencia CANTIDAD (Enteros/Bultos/UND) de PESO (Decimales/KG/KGM).
+    2. Si OBSERVACIONES tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida tras un guion.
     """
 
     try:
-        # Pausa de seguridad
-        time.sleep(2) 
+        time.sleep(2) # Pausa de seguridad
         
         model = genai.GenerativeModel(modelo_elegido)
         res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
@@ -178,17 +175,13 @@ def procesar_guia_ia(pdf_bytes):
             return None
 
     except Exception as e:
-        # Si falla el 2.0, intentamos con el 2.0-flash-lite (Plan B ultra rápido)
-        try:
-            time.sleep(2)
-            model_b = genai.GenerativeModel("gemini-2.0-flash-lite")
-            res_b = model_b.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
-            texto_b = res_b.text.replace("```json", "").replace("```", "")
-            match_b = re.search(r'\{.*\}', texto_b, re.DOTALL)
-            if match_b: return json.loads(match_b.group(0))
-        except:
-            st.error(f"❌ Error conectando ({e}). Espera 1 minuto.")
-            return None
+        if "429" in str(e):
+            st.error("⏳ Google pide pausa: Espera 1 minuto real antes de intentar de nuevo.")
+        elif "404" in str(e):
+            st.error(f"❌ Modelo no encontrado: {modelo_elegido}")
+        else:
+            st.error(f"❌ Error: {e}")
+        return None
 
 # ==========================================
 # 6. INTERFAZ
@@ -203,7 +196,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (V7.0 - Gemini 2.0)")
+st.title("Generador de Certificados (V8.0 Estable)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -249,7 +242,7 @@ if archivos:
             
             st.session_state['df_items'] = df
             st.success(f"✅ Procesado: {total-errores} correctos.")
-        else: st.error("❌ Falló el proceso. Intenta de nuevo en 30 seg.")
+        else: st.error("❌ Falló el proceso. Revisa los mensajes de error.")
 
 # EDICIÓN
 if st.session_state['ocr_data']:
