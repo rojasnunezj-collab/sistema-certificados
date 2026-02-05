@@ -132,30 +132,22 @@ def procesar_guia_ia(pdf_bytes):
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    # === RASTREADOR DE MODELOS (V4.4) ===
+    # === RASTREADOR DE MODELOS INTELIGENTE ===
     model = None
     lista_modelos_visibles = []
     
     try:
-        # 1. Pedimos la lista real a Google
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 lista_modelos_visibles.append(m.name)
         
-        # 2. Buscamos el mejor candidato (FLASH 1.5)
-        # Prioridad 1: Que tenga '1.5' y 'flash'
         candidato = next((m for m in lista_modelos_visibles if 'flash' in m and '1.5' in m), None)
-        
-        # Prioridad 2: Cualquiera que diga 'flash' (aunque sea 2.0, si no hay más remedio)
         if not candidato:
             candidato = next((m for m in lista_modelos_visibles if 'flash' in m), None)
-            
-        # Prioridad 3: Gemini Pro 1.5 (Backup potente)
         if not candidato:
             candidato = next((m for m in lista_modelos_visibles if 'pro' in m and '1.5' in m), None)
 
         if candidato:
-            # st.toast(f"Usando modelo: {candidato}") # Aviso silencioso de éxito
             model = genai.GenerativeModel(candidato)
         else:
             st.warning(f"⚠️ No encontré modelos 'Flash'. Disponibles: {lista_modelos_visibles}")
@@ -165,19 +157,44 @@ def procesar_guia_ia(pdf_bytes):
         st.error(f"❌ Error buscando modelos: {e}")
         return None
 
-    prompt = """Extrae a JSON estricto: 
+    # === INSTRUCCIONES DETALLADAS (PROMPT RESTAURADO Y MEJORADO) ===
+    prompt = """
+    Actúa como un experto en extracción de datos OCR. Analiza este documento (Guía de Remisión) y extrae la siguiente información en formato JSON estricto.
+
+    ESTRUCTURA JSON REQUERIDA:
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
-        "vehiculo": "PLACA", 
-        "punto_partida": "Dirección completa", 
-        "punto_llegada": "Dirección completa", 
-        "destinatario": "Razón Social", 
-        "items": [{"desc": "Descripción", "cant": "0", "um": "UNIDAD", "peso": "0"}]
+        "vehiculo": "PLACA (ej: B2F-837)", 
+        "punto_partida": "Dirección completa de partida", 
+        "punto_llegada": "Dirección completa de llegada", 
+        "destinatario": "Razón Social del Destinatario", 
+        "items": [
+            {
+                "desc": "Descripción detallada del bien", 
+                "cant": "Número exacto (ej: 749.00)", 
+                "um": "Unidad de medida (UND, KG, NIU, etc)", 
+                "peso": "Peso total numérico (ej: 500.00)"
+            }
+        ]
     }
-    REGLAS:
-    1. Si 'OBSERVACION' tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida tras guion.
-    2. Ignora residuos en observación.
+
+    REGLAS CRÍTICAS DE EXTRACCIÓN:
+    1. **TABLA DE ITEMS:**
+       - Busca columnas como "Descripción", "Cantidad", "U.M.", "Peso Total" o "Peso".
+       - **¡IMPORTANTE!** Diferencia entre CANTIDAD (bultos) y PESO (kg). Si solo hay una cifra numérica junto a la unidad, asígnala al campo más lógico. Si ves 'KGM' o 'KG', es peso. Si ves 'UND' o 'NIU', es cantidad.
+       - Si el peso está vacío o es 0, busca si está en otra columna cercana.
+
+    2. **PUNTO DE PARTIDA Y OBSERVACIONES:**
+       - Revisa el campo "OBSERVACIONES" al final del documento. 
+       - Si menciona un lugar específico como "FUNDO...", "PLANTA...", "POZO...", extrae ESE LUGAR y agrégalo al final de 'punto_partida' separado por " - ".
+       - Ignora textos genéricos sobre residuos o devolución de envases en las observaciones.
+
+    3. **FECHA Y SERIE:**
+       - La fecha suele estar arriba a la derecha o en 'Fecha de Emisión'.
+       - La serie tiene formato XXXX-XXXXXXX (ej: EG07-0004331).
+
+    Responde SOLO con el JSON.
     """
     
     try:
@@ -215,7 +232,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("🔄 Reiniciar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (v4.4)")
+st.title("Generador de Certificados (v4.5)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -262,7 +279,7 @@ if archivos:
             st.success(f"✅ Procesado: {total-errores} correctos.")
         else: st.error("❌ No se pudieron extraer datos.")
 
-# EDICIÓN (Resto del código igual)
+# EDICIÓN
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
     st.markdown("### 2. Validación")
@@ -389,4 +406,4 @@ if st.session_state['ocr_data']:
                 f = [d['fec_emis'], d['emi'], d['tit'], d['cli'], d['ruc_c'], d['guia'], "FINALIZADO", d['cert_name'], u_d, u_p]
                 if registrar_en_control(f): st.success("✅ Registrado"); st.balloons()
 
-st.caption("--- FIN DEL SISTEMA V4.4 (RASTREADOR INTELIGENTE) ---")
+st.caption("--- FIN DEL SISTEMA V4.5 (LECTURA PRECISA) ---")
