@@ -53,24 +53,20 @@ PLANTILLAS = {
 def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
     creds = None
-    
     try:
         if "gcp_service_account" in st.secrets:
-            creds = service_account.Credentials.from_service_account_info(
-                st.secrets["gcp_service_account"], scopes=scopes
-            )
+            creds = service_account.Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
     except: pass
 
     if not creds:
         try:
             creds = service_account.Credentials.from_service_account_file('secretos.json', scopes=scopes)
-        except Exception as e:
-            return None, None
+        except: return None, None
 
     try:
         return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
     except Exception as e:
-        st.error(f"Error conectando servicios Google: {e}")
+        st.error(f"Error Google: {e}")
         return None, None
 
 def registrar_en_control(datos_fila):
@@ -83,10 +79,10 @@ def registrar_en_control(datos_fila):
         ).execute()
         return True
     except Exception as e:
-        st.error(f"Error guardando en Excel (Pestaña historial): {e}")
+        st.error(f"Error Excel: {e}")
         return False
 
-# --- FORMATOS Y LIMPIEZA ---
+# --- FORMATOS ---
 def obtener_fin_de_mes(fecha_str):
     try:
         dt = datetime.strptime(fecha_str, "%d/%m/%Y")
@@ -97,13 +93,10 @@ def obtener_fin_de_mes(fecha_str):
 
 def limpiar_descripcion(texto):
     if not texto: return ""
-    texto_str = str(texto).strip()
-    texto_limpio = re.sub(r'VEN\s*-\s*AMB\s*-\s*', '', texto_str, flags=re.IGNORECASE)
-    return texto_limpio.strip()
+    return re.sub(r'VEN\s*-\s*AMB\s*-\s*', '', str(texto).strip(), flags=re.IGNORECASE).strip()
 
 def formato_nompropio(texto):
-    if not texto: return ""
-    return str(texto).strip().title()
+    return str(texto).strip().title() if texto else ""
 
 def normalizar_fecha(fecha_str):
     if not fecha_str: return datetime.now().strftime("%d/%m/%Y")
@@ -129,46 +122,42 @@ def leer_sheet_seguro(pestaña):
         v = r.get('values', [])
         if not v: return pd.DataFrame()
         return pd.DataFrame(v[1:], columns=v[0])
-    except Exception as e:
-        st.warning(f"No se pudo leer la pestaña '{pestaña}': {e}")
-        return pd.DataFrame()
+    except: return pd.DataFrame()
 
 def procesar_guia_ia(pdf_bytes):
     try:
-        if "FALTA" in API_KEY or API_KEY is None:
-            st.error("⚠️ ERROR: No se detectó la API KEY.")
+        if "FALTA" in API_KEY:
+            st.error("⚠️ Falta API Key")
             return None
         genai.configure(api_key=API_KEY.strip())
-    except Exception as e:
-        st.error(f"❌ Error Configuración API: {e}")
-        return None
+    except: return None
 
+    # === FUERZA BRUTA PARA MODELO ===
+    model = None
+    errores_conexion = []
+    
+    # Intento 1: El estándar Flash 1.5 (El mejor gratis)
     try:
-        # === CORRECCIÓN CRÍTICA V4.2 ===
-        # Obtenemos la lista de modelos DISPONIBLES para tu clave
-        lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        model = genai.GenerativeModel("gemini-1.5-flash")
+    except Exception as e: errores_conexion.append(str(e))
+    
+    # Intento 2: Si falla, probar con alias alternativo
+    if not model:
+        try:
+            model = genai.GenerativeModel("models/gemini-1.5-flash")
+        except Exception as e: errores_conexion.append(str(e))
+
+    # Intento 3: Último recurso (Pro)
+    if not model:
+        try:
+            model = genai.GenerativeModel("gemini-1.5-pro")
+        except Exception as e: errores_conexion.append(str(e))
         
-        # 1. Buscamos 'gemini-1.5-flash' (El mejor gratuito)
-        # Usamos 'in' para que coincida con 'models/gemini-1.5-flash-latest' etc.
-        modelo_nombre = next((m for m in lista_modelos if '1.5' in m and 'flash' in m), None)
-        
-        # 2. Si falla, buscamos 'gemini-pro' (El clásico gratuito)
-        if not modelo_nombre:
-             modelo_nombre = next((m for m in lista_modelos if 'gemini-pro' in m and '1.5' not in m), None)
-        
-        # 3. Si no hay ninguno de esos, AVISAMOS en lugar de usar uno prohibido
-        if not modelo_nombre:
-            st.error(f"❌ No encontré modelos gratuitos compatibles. Disponibles: {lista_modelos}")
-            return None
-            
-        # st.success(f"Conectado a: {modelo_nombre}") # Descomentar para ver cuál eligió
-        model = genai.GenerativeModel(modelo_nombre)
-        
-    except Exception as e:
-        st.error(f"❌ Error conectando con Gemini: {e}")
+    if not model:
+        st.error(f"❌ No se pudo conectar con ningún modelo Gemini. Errores: {errores_conexion}")
         return None
 
-    prompt = """Extrae la información de la guía de remisión a este JSON estricto: 
+    prompt = """Extrae a JSON estricto: 
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
@@ -176,12 +165,11 @@ def procesar_guia_ia(pdf_bytes):
         "punto_partida": "Dirección completa", 
         "punto_llegada": "Dirección completa", 
         "destinatario": "Razón Social", 
-        "items": [{"desc": "Descripción del bien", "cant": "0", "um": "UNIDAD", "peso": "0"}]
+        "items": [{"desc": "Descripción", "cant": "0", "um": "UNIDAD", "peso": "0"}]
     }
-    REGLAS IMPORTANTES:
-    1. Revisa el campo "OBSERVACION". Si encuentras 'FUNDO' o 'PLANTA' (Ej: "FUNDO MILAGRITOS"), extráelo.
-    2. Ignora texto de residuos/envases en la observación. Quédate SOLO con el lugar.
-    3. Concatena ese nombre al final de 'punto_partida' separado por un guion " - ".
+    REGLAS:
+    1. Si 'OBSERVACION' tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida tras guion.
+    2. Ignora residuos en observación.
     """
     
     try:
@@ -190,46 +178,36 @@ def procesar_guia_ia(pdf_bytes):
         if match: return json.loads(match.group(0))
         return None
     except Exception as e:
-        # Capturamos el error 429 específico para dar un mensaje amigable
         if "429" in str(e):
-             st.warning("⏳ Mucha velocidad: Espera 30 segundos antes de subir el siguiente PDF.")
+             st.warning("⏳ Límite de velocidad: Esperando unos segundos...")
+             time.sleep(5) # Pausa de emergencia extra
              return None
-        st.error(f"❌ Fallo al leer PDF: {e}")
+        st.error(f"❌ Error lectura: {e}")
         return None
 
 # ==========================================
-# 3. INTERFAZ GRÁFICA
+# 3. INTERFAZ
 # ==========================================
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
 
 with st.sidebar:
-    with st.expander("❓ ¿Cómo usar el sistema?"):
+    with st.expander("❓ Ayuda Rápida"):
         st.markdown("""
-        **1. Sube tus Guías:**
-        Arrastra los PDFs al recuadro principal.
-        
-        **2. Procesa:**
-        Dale clic al botón **'🔍 Procesar Guías con IA'** y espera el mensaje verde.
-        
-        **3. Revisa y Edita:**
-        Verifica los datos en la pantalla. Puedes corregir textos o pesos manualmente.
-        
-        **4. Descarga:**
-        Ve a la pestaña **'1️⃣ Generar Materiales'** para bajar el Word y Excel.
-        
-        **5. Registra:**
-        Cuando tengas el documento final firmado, pega el link en la pestaña **'2️⃣ Registrar Final'** para guardarlo en el historial.
+        1. **Sube PDF**.
+        2. Clic **Procesar**.
+        3. **Revisa** datos.
+        4. **Descarga** Word/Excel.
+        5. **Registra** link final.
         """)
     st.divider()
-    
     st.header("⚙️ Configuración")
     empresa_firma = st.selectbox("Empresa", list(PLANTILLAS.keys()))
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
-    if st.button("🔄 Recargar Página"): st.cache_data.clear(); st.rerun()
+    if st.button("🔄 Reiniciar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados")
+st.title("Generador de Certificados (v4.3)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -239,7 +217,6 @@ if 'repo_data' not in st.session_state:
     }
 repo = st.session_state['repo_data']
 
-# UPLOAD
 archivos = st.file_uploader("1. Subir Guías (PDF)", type=["pdf"], accept_multiple_files=True)
 
 if archivos:
@@ -247,7 +224,13 @@ if archivos:
         prog = st.progress(0)
         items, grl = [], None
         errores = 0
+        total = len(archivos)
+        
         for i, arc in enumerate(archivos):
+            # === FRENO DE MANO PARA EVITAR ERROR 429 ===
+            # Pausa obligatoria de 4 segundos entre archivos
+            if i > 0: time.sleep(4) 
+            
             d = procesar_guia_ia(arc.read())
             if d:
                 if not grl: grl = d
@@ -256,7 +239,8 @@ if archivos:
                     it.update({'guia_origen': s, 'fecha_origen': f, 'placa_origen': p})
                     items.append(it)
             else: errores += 1
-            prog.progress((i+1)/len(archivos))
+            prog.progress((i+1)/total)
+        
         time.sleep(0.5); prog.empty()
         
         if grl and items:
@@ -268,13 +252,13 @@ if archivos:
             df['desc'] = df['desc'].apply(limpiar_descripcion)
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
             st.session_state['df_items'] = df
-            st.success(f"✅ Éxito: {len(archivos)-errores} guías procesadas.")
-        else: st.error("❌ No se pudieron extraer datos.")
+            st.success(f"✅ Procesado: {total-errores} correctos.")
+        else: st.error("❌ No se pudieron extraer datos (Posible bloqueo de velocidad o PDF ilegible).")
 
-# EDICIÓN
+# EDICIÓN (Resto del código igual)
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
-    st.markdown("### 2. Validación de Datos")
+    st.markdown("### 2. Validación")
     
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
@@ -296,7 +280,7 @@ if st.session_state['ocr_data']:
     v_fec_emis = cont_f.text_input("F. Emisión", value=f_calc)
 
     if len(archivos) > 1:
-        v_guia, v_placa = c3.text_input("Guía", "VARIAS / VER DETALLE"), c4.text_input("Placa", "VARIAS / VER DETALLE")
+        v_guia, v_placa = c3.text_input("Guía", "VARIAS"), c4.text_input("Placa", "VARIAS")
     else:
         v_guia, v_placa = c3.text_input("Guía", formatear_guia(ocr.get('serie'))), c4.text_input("Placa", ocr.get('vehiculo'))
 
@@ -317,7 +301,7 @@ if st.session_state['ocr_data']:
                 v_ruc_e, v_reg_e = str(row_e['RUC']), str(row_e['REGISTRO'])
             except: pass
         st.caption(f"RUC: {v_ruc_e} | REG: {v_reg_e}")
-        v_tit = st.selectbox("Título del Certificado", repo['servicios'].iloc[:,0].unique() if not repo['servicios'].empty else [])
+        v_tit = st.selectbox("Título Certificado", repo['servicios'].iloc[:,0].unique() if not repo['servicios'].empty else [])
 
     with c_b:
         v_cli = st.selectbox("Cliente", repo['clientes']['EMPRESA'].unique() if not repo['clientes'].empty else [])
@@ -334,22 +318,21 @@ if st.session_state['ocr_data']:
     dest_final = v_dest if "EPMI" not in str(v_dest).upper() else "EPMI S.A.C."
 
     st.divider()
-    tab1, tab2 = st.tabs(["1️⃣ Generar Materiales", "2️⃣ Registrar Final"])
+    tab1, tab2 = st.tabs(["1️⃣ Generar", "2️⃣ Registrar"])
 
     with tab1:
-        st.info("ℹ️ Genera y descarga los archivos.")
-        col_btn_1, col_btn_2 = st.columns(2)
-        with col_btn_1:
-            if st.button("📄 Generar Word (Borrador)", type="primary"):
+        c_gen, c_exc = st.columns(2)
+        with c_gen:
+            if st.button("📄 Generar Word", type="primary"):
                 drive, _ = obtener_servicios()
                 if drive:
                     try:
                         id_p = PLANTILLAS[empresa_firma][tipo_plantilla]
                         req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
                         fh = io.BytesIO()
-                        downloader = MediaIoBaseDownload(fh, req)
+                        dl = MediaIoBaseDownload(fh, req)
                         done = False
-                        while not done: _, done = downloader.next_chunk()
+                        while not done: _, done = dl.next_chunk()
                         
                         doc = DocxTemplate(io.BytesIO(fh.getvalue()))
                         ctx = {
@@ -367,56 +350,36 @@ if st.session_state['ocr_data']:
                         
                         peso_t = sum([float(str(x).replace(',','')) for x in v_items['peso'] if str(x).replace(',','').replace('.','').isdigit()])
                         
-                        nombre_certificado_completo = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}"
-                        nombre_archivo_safe = nombre_certificado_completo.replace("/", "-").replace("\\", "-")
-                        
-                        st.session_state['nombre_archivo_final'] = nombre_archivo_safe
+                        name_safe = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}".replace("/", "-")
+                        st.session_state['nombre_archivo_final'] = name_safe
                         st.session_state['datos_log_pendientes'] = {
                             "fec_emis": v_fec_emis, "emi": v_emi, "tit": tipo_operacion_simple, 
                             "cli": v_cli, "ruc_c": v_ruc_c, "guia": v_guia, "res": v_res,
-                            "cert_name": nombre_certificado_completo, "peso": peso_t              
+                            "cert_name": name_safe, "peso": peso_t              
                         }
-                        st.success("✅ Word generado.")
+                        st.success("✅ Generado")
                     except Exception as e: st.error(f"Error: {e}")
 
             if 'word_buffer' in st.session_state:
-                fname = st.session_state.get('nombre_archivo_final', f"Borrador_{v_corr}")
-                st.download_button("📩 Descargar Word", data=st.session_state['word_buffer'], 
-                                 file_name=f"{fname}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                fn = st.session_state.get('nombre_archivo_final', "Borrador")
+                st.download_button("📩 Bajar Word", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
-        with col_btn_2:
-            df_ex = pd.DataFrame()
-            n = len(v_items)
-            df_ex['Fecha'] = v_items.get('fecha_origen', [fecha_base]*n)
-            df_ex['Vehículo'] = v_items.get('placa_origen', [v_placa]*n)
-            df_ex['Guía'] = v_items.get('guia_origen', [v_guia]*n)
-            df_ex['Descripción'] = v_items['desc']
-            df_ex['Cantidad'] = v_items['cant']
-            df_ex['U.M.'] = v_items['um']
-            df_ex['Peso (Kg)'] = v_items['peso']
+        with c_exc:
+            df_x = st.session_state['df_items'].copy()
             out = io.BytesIO()
-            with pd.ExcelWriter(out, engine='xlsxwriter') as w: df_ex.to_excel(w, index=False)
-            fname_excel = st.session_state.get('nombre_archivo_final', f"Tabla_{v_corr}")
-            st.download_button("📊 Descargar Excel", data=out.getvalue(), 
-                             file_name=f"Tabla {fname_excel}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            with pd.ExcelWriter(out, engine='xlsxwriter') as w: df_x.to_excel(w, index=False)
+            fn_x = st.session_state.get('nombre_archivo_final', "Tabla")
+            st.download_button("📊 Bajar Excel", out.getvalue(), f"Tabla {fn_x}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     with tab2:
-        url_doc = st.text_input("🔗 Link del DOC:")
-        url_pdf = st.text_input("🔗 Link del PDF:")
-        if st.button("🏁 Guardar Registro en Historial"):
-            if not st.session_state.get('datos_log_pendientes') or not url_doc or not url_pdf:
-                st.warning("⚠️ Faltan datos o links.")
+        u_d = st.text_input("Link DOC:")
+        u_p = st.text_input("Link PDF:")
+        if st.button("🏁 Registrar"):
+            if not st.session_state.get('datos_log_pendientes') or not u_d or not u_p:
+                st.warning("⚠️ Faltan datos")
             else:
-                d_log = st.session_state['datos_log_pendientes']
-                fila = [
-                    d_log['fec_emis'], d_log['emi'], d_log['tit'], d_log['cli'], 
-                    d_log['ruc_c'], d_log['guia'], "FINALIZADO", 
-                    d_log['cert_name'], url_doc, url_pdf
-                ]
-                if registrar_en_control(fila):
-                    st.balloons()
-                    st.success("✅ Registrado en pestaña 'historial'.")
-                else: st.error("Error al guardar.")
+                d = st.session_state['datos_log_pendientes']
+                f = [d['fec_emis'], d['emi'], d['tit'], d['cli'], d['ruc_c'], d['guia'], "FINALIZADO", d['cert_name'], u_d, u_p]
+                if registrar_en_control(f): st.success("✅ Registrado"); st.balloons()
 
-st.divider()
-st.caption("--- FIN DEL SISTEMA v4.2 (ANTI-ERROR PRO) ---")
+st.caption("--- FIN DEL SISTEMA V4.3 (MODO TANQUE) ---")
