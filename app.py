@@ -17,7 +17,9 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# --- CREDENCIALES ---
+# ==========================================
+# 2. API KEY (VERIFICACIÓN)
+# ==========================================
 API_KEY = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
@@ -31,9 +33,10 @@ if not API_KEY:
     except: pass
 
 if not API_KEY:
-    API_KEY = "FALTA_CONFIGURAR"
+    st.error("🚨 ERROR GRAVE: No se encuentra la API KEY. Revisa 'secrets.toml'.")
+    st.stop()
 
-# IDs Google
+# IDs Google (Tus hojas)
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
 
@@ -49,7 +52,7 @@ PLANTILLAS = {
 }
 
 # ==========================================
-# 2. CONEXIÓN GOOGLE
+# 3. FUNCIONES DE CONEXIÓN
 # ==========================================
 def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -66,7 +69,9 @@ def obtener_servicios():
 
     try:
         return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
-    except: return None, None
+    except Exception as e:
+        st.error(f"Error Google: {e}")
+        return None, None
 
 def registrar_en_control(datos_fila):
     _, sheets = obtener_servicios()
@@ -77,10 +82,12 @@ def registrar_en_control(datos_fila):
             valueInputOption="USER_ENTERED", body={"values": [datos_fila]}
         ).execute()
         return True
-    except: return False
+    except Exception as e:
+        st.error(f"Error Excel: {e}")
+        return False
 
 # ==========================================
-# 3. FORMATOS
+# 4. FORMATOS
 # ==========================================
 def obtener_fin_de_mes(fecha_str):
     try:
@@ -124,86 +131,97 @@ def leer_sheet_seguro(pestaña):
     except: return pd.DataFrame()
 
 # ==========================================
-# 4. INTELIGENCIA ARTIFICIAL (NÚCLEO BLINDADO)
+# 5. INTELIGENCIA ARTIFICIAL (DIAGNÓSTICO)
 # ==========================================
 def procesar_guia_ia(pdf_bytes):
+    # 1. Configurar API
     try:
-        if "FALTA" in API_KEY:
-            st.error("Falta API KEY")
-            return None
         genai.configure(api_key=API_KEY.strip())
-    except: return None
+    except Exception as e:
+        st.error(f"❌ Error al configurar API Key: {e}")
+        return None
 
-    # ESTRATEGIA MULTIMODELO: Probamos 3 modelos diferentes en orden
-    # Si uno falla por velocidad, saltamos al siguiente.
-    modelos_a_probar = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro"]
-    
-    prompt = """
-    Actúa como experto OCR. Analiza esta Guía de Remisión y extrae a JSON estricto:
-    {
-        "fecha": "dd/mm/yyyy", 
-        "serie": "T001-000000", 
-        "vehiculo": "PLACA", 
-        "punto_partida": "Dirección completa", 
-        "punto_llegada": "Dirección completa", 
-        "destinatario": "Razón Social", 
-        "items": [
-            {
-                "desc": "Descripción del bien", 
-                "cant": "Número exacto (ej: 100)", 
-                "um": "Unidad (UND, NIU, BULTOS)", 
-                "peso": "Peso numérico (ej: 500.00)"
-            }
-        ]
-    }
-    REGLAS CLAVE:
-    1. TABLA: Diferencia entre CANTIDAD (Enteros, Bultos, UND) y PESO (Decimales, KG, KGM). Pon cada uno en su campo.
-    2. LUGAR: Si en OBSERVACIONES dice "FUNDO X" o "PLANTA Y", agrégalo a punto_partida tras un guion.
-    3. Responde SOLO JSON.
-    """
+    # 2. BUSCAR MODELO EXACTO (FLASH 1.5)
+    nombre_modelo_final = None
+    try:
+        # Pedimos a Google la lista de modelos disponibles para TU cuenta
+        lista_modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Buscamos el Flash 1.5
+        nombre_modelo_final = next((m for m in lista_modelos if 'flash' in m and '1.5' in m), None)
+        
+        # Si no está, avisamos
+        if not nombre_modelo_final:
+            st.warning(f"⚠️ NO se encontró 'Flash 1.5'. Modelos disponibles en tu cuenta: {lista_modelos}")
+            # Intentamos usar el primero disponible como salvavidas
+            if lista_modelos:
+                nombre_modelo_final = lista_modelos[0]
+            else:
+                st.error("❌ Tu API Key no tiene acceso a NINGÚN modelo. ¿Está activa la facturación o el trial?")
+                return None
+        
+        # st.info(f"✅ Conectado a: {nombre_modelo_final}") # Descomentar para ver modelo
+        
+    except Exception as e:
+        st.error(f"❌ Error al listar modelos (Problema de conexión o Clave): {e}")
+        return None
 
-    for modelo_nombre in modelos_a_probar:
-        try:
-            # Intentamos conectar con el modelo actual
-            model = genai.GenerativeModel(modelo_nombre)
-            
-            # Llamada a la API
-            res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
-            
-            # Limpieza
-            texto = res.text.replace("```json", "").replace("```", "")
-            match = re.search(r'\{.*\}', texto, re.DOTALL)
-            
-            if match:
-                # ¡ÉXITO! Devolvemos los datos y salimos del bucle
-                return json.loads(match.group(0))
-            
-        except Exception as e:
-            # Si falla, imprimimos un aviso pequeño y probamos el siguiente modelo
-            # st.caption(f"Reintentando con otro modelo... ({modelo_nombre} falló)")
-            time.sleep(1) # Pequeña pausa antes de cambiar de modelo
-            continue
+    # 3. EJECUTAR
+    try:
+        model = genai.GenerativeModel(nombre_modelo_final)
+        
+        prompt = """
+        Analiza esta Guía de Remisión y extrae JSON estricto:
+        {
+            "fecha": "dd/mm/yyyy", 
+            "serie": "T001-000000", 
+            "vehiculo": "PLACA", 
+            "punto_partida": "Dirección completa", 
+            "punto_llegada": "Dirección completa", 
+            "destinatario": "Razón Social", 
+            "items": [
+                {
+                    "desc": "Descripción del bien", 
+                    "cant": "Número (ej: 100)", 
+                    "um": "Unidad (UND, NIU)", 
+                    "peso": "Peso (ej: 500.00)"
+                }
+            ]
+        }
+        REGLAS:
+        1. Diferencia CANTIDAD (Enteros) de PESO (Decimales/KG).
+        2. Si OBSERVACIONES tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida.
+        """
 
-    # Si llegamos aquí, fallaron los 3 modelos
-    st.error("❌ Todos los modelos están ocupados. Espera 1 minuto.")
-    return None
+        res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
+        
+        texto_limpio = res.text.replace("```json", "").replace("```", "")
+        match = re.search(r'\{.*\}', texto_limpio, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        else:
+            st.error(f"❌ La IA respondió, pero no dio JSON válido. Respuesta: {res.text[:100]}...")
+            return None
+
+    except Exception as e:
+        # AQUÍ ES DONDE VEREMOS EL ERROR REAL
+        st.error(f"💀 ERROR FATAL DE GOOGLE: {e}")
+        return None
 
 # ==========================================
-# 5. INTERFAZ
+# 6. INTERFAZ
 # ==========================================
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
 
 with st.sidebar:
-    with st.expander("Ayuda"):
-        st.markdown("1. Sube PDF.\n2. Procesa.\n3. Descarga.")
     st.header("Configuración")
     empresa_firma = st.selectbox("Empresa", list(PLANTILLAS.keys()))
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (V5.0 Multimodelo)")
+st.title("Generador de Certificados (V6.0 DIAGNÓSTICO)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -213,18 +231,18 @@ if 'repo_data' not in st.session_state:
     }
 repo = st.session_state['repo_data']
 
-archivos = st.file_uploader("1. Subir Guías (PDF)", type=["pdf"], accept_multiple_files=True)
+archivos = st.file_uploader("Subir Guías (PDF)", type=["pdf"], accept_multiple_files=True)
 
 if archivos:
-    if st.button("🔍 Procesar Guías con IA"):
+    if st.button("🔍 Procesar"):
         prog = st.progress(0)
         items, grl = [], None
         errores = 0
         total = len(archivos)
         
         for i, arc in enumerate(archivos):
-            # Pausa de seguridad
-            if i > 0: time.sleep(3)
+            # Pausa obligatoria
+            if i > 0: time.sleep(2)
             
             d = procesar_guia_ia(arc.read())
             if d:
@@ -250,12 +268,12 @@ if archivos:
             
             st.session_state['df_items'] = df
             st.success(f"✅ Procesado: {total-errores} correctos.")
-        else: st.error("❌ No se pudieron extraer datos.")
+        else: st.error("❌ Falló el proceso. Mira el error arriba.")
 
 # EDICIÓN
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
-    st.markdown("### 2. Validación")
+    st.markdown("### Validación")
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
     fecha_base = normalizar_fecha(ocr.get('fecha'))
