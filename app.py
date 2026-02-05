@@ -17,26 +17,20 @@ from docxtpl import DocxTemplate
 # ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
-# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA v3.9) ---
-# Esta lógica busca la clave donde sea que haya caído en los secretos
+# --- GESTIÓN DE API KEY (VERSIÓN ROBUSTA v4.0) ---
 API_KEY = None
-
-# Intento 1: Buscar en la raíz (donde debería estar)
 try:
     if "GEMINI_API_KEY" in st.secrets:
         API_KEY = st.secrets["GEMINI_API_KEY"]
 except: pass
 
-# Intento 2: Buscar dentro del bloque de Google (por si se pegó abajo)
 if not API_KEY:
     try:
         if "gcp_service_account" in st.secrets and "GEMINI_API_KEY" in st.secrets["gcp_service_account"]:
             API_KEY = st.secrets["gcp_service_account"]["GEMINI_API_KEY"]
     except: pass
 
-# Intento 3: Clave manual (solo para pruebas locales de emergencia)
 if not API_KEY:
-    # Si todo falla, el sistema avisará, pero no se romperá al inicio
     API_KEY = "FALTA_CONFIGURAR"
 
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
@@ -60,7 +54,6 @@ def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
     creds = None
     
-    # 1. Intentar leer desde SECRETOS DE STREAMLIT (Nube)
     try:
         if "gcp_service_account" in st.secrets:
             creds = service_account.Credentials.from_service_account_info(
@@ -68,7 +61,6 @@ def obtener_servicios():
             )
     except: pass
 
-    # 2. Si no funcionó, intentar leer archivo LOCAL (PC)
     if not creds:
         try:
             creds = service_account.Credentials.from_service_account_file('secretos.json', scopes=scopes)
@@ -144,7 +136,7 @@ def leer_sheet_seguro(pestaña):
 def procesar_guia_ia(pdf_bytes):
     try:
         if "FALTA" in API_KEY or API_KEY is None:
-            st.error("⚠️ ERROR CRÍTICO: No se detectó la GEMINI_API_KEY en los secretos. Revisa la configuración en Streamlit Cloud.")
+            st.error("⚠️ ERROR: No se detectó la API KEY. Revisa los secretos.")
             return None
         genai.configure(api_key=API_KEY.strip())
     except Exception as e:
@@ -152,9 +144,8 @@ def procesar_guia_ia(pdf_bytes):
         return None
 
     try:
-        modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        modelo_nombre = next((m for m in modelos if 'flash' in m), modelos[0])
-        model = genai.GenerativeModel(modelo_nombre)
+        # CAMBIO CLAVE: USAR MODELO ESTABLE 1.5 FLASH (Mayor cuota gratis)
+        model = genai.GenerativeModel("gemini-1.5-flash")
     except Exception as e:
         st.error(f"❌ Error conectando con Gemini: {e}")
         return None
@@ -192,6 +183,26 @@ if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFra
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
 
 with st.sidebar:
+    # --- AYUDA INTEGRADA ---
+    with st.expander("❓ ¿Cómo usar el sistema?"):
+        st.markdown("""
+        **1. Sube tus Guías:**
+        Arrastra los PDFs al recuadro principal.
+        
+        **2. Procesa:**
+        Dale clic al botón **'🔍 Procesar Guías con IA'** y espera el mensaje verde.
+        
+        **3. Revisa y Edita:**
+        Verifica los datos en la pantalla. Puedes corregir textos o pesos manualmente.
+        
+        **4. Descarga:**
+        Ve a la pestaña **'1️⃣ Generar Materiales'** para bajar el Word y Excel.
+        
+        **5. Registra:**
+        Cuando tengas el documento final firmado, pega el link en la pestaña **'2️⃣ Registrar Final'** para guardarlo en el historial.
+        """)
+    st.divider()
+    
     st.header("⚙️ Configuración")
     empresa_firma = st.selectbox("Empresa", list(PLANTILLAS.keys()))
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
@@ -387,4 +398,4 @@ if st.session_state['ocr_data']:
                 else: st.error("Error al guardar.")
 
 st.divider()
-st.caption("--- FIN DEL SISTEMA v3.9 ---")
+st.caption("--- FIN DEL SISTEMA v4.0 (GEMINI ESTABLE) ---")
