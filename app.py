@@ -412,7 +412,7 @@ def procesar_guia_ia(pdf_bytes):
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    modelo = "gemini-1.5-flash"
+    modelo = "gemini-1.5-flash-latest"
 
     prompt = """
     Actúa como experto OCR y extrae los datos de esta Guía de Remisión a JSON:
