@@ -441,13 +441,10 @@ def procesar_guia_ia(pdf_bytes):
         model = genai.GenerativeModel("gemini-1.5-flash")
     except:
         try:
-            model = genai.GenerativeModel("gemini-1.5-flash-latest")
-        except:
-            try:
-                model = genai.GenerativeModel("models/gemini-1.5-flash")
-            except Exception as e:
-                st.error(f"Error fatal inicializando modelo: {e}")
-                return None
+            model = genai.GenerativeModel("gemini-pro") 
+        except Exception as e:
+            st.error(f"Error fatal inicializando modelo: {e}")
+            return None
 
     try:
         time.sleep(2) 
@@ -624,6 +621,7 @@ if st.session_state['ocr_data']:
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
+                        "DIRECCION_LLEGADA": st.session_state.get("txt_llegada", v_llegada), # Alias por seguridad
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
