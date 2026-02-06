@@ -114,8 +114,18 @@ def registrar_en_control(datos_fila):
 def subir_a_drive(contenido_bytes, nombre_archivo):
     drive, _ = obtener_servicios()
     if not drive: return None
+    
+    # DEBUG: Verificar ID para evitar subida a root (quota 0)
+    if not DRIVE_FOLDER_ID:
+        st.error("🚨 ERROR CRÍTICO: DRIVE_FOLDER_ID está vacío o no se leyó. Se intentará subir a root (puede fallar por cuota).")
+    else:
+        # Solo info en consola para no ensuciar UI si todo va bien
+        print(f"Subiendo a carpeta ID: {DRIVE_FOLDER_ID}")
+
     try:
         file_metadata = {'name': f"{nombre_archivo}.docx", 'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
+        
+        # Refuerzo de parents como lista explícita
         if DRIVE_FOLDER_ID:
             file_metadata['parents'] = [DRIVE_FOLDER_ID]
         
@@ -123,7 +133,10 @@ def subir_a_drive(contenido_bytes, nombre_archivo):
         file = drive.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
         return file.get('webViewLink')
     except Exception as e:
-        st.error(f"Error subiendo a Drive: {e}")
+        err_msg = str(e)
+        st.error(f"Error subiendo a Drive: {err_msg}")
+        if "storageQuotaExceeded" in err_msg or "403" in err_msg:
+            st.warning("⚠️ CUOTA EXCEDIDA (403): Probablemente DRIVE_FOLDER_ID es incorrecto/vacío y estás subiendo a la cuenta de servicio (0GB). Configura 'DRIVE_FOLDER_ID' en Secrets.")
         return None
 
 # ==========================================
