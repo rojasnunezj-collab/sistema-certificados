@@ -436,26 +436,18 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # INTENTO ROBUSTO DE MODELO
-    # INTENTO DINAMICO DE MODELO
+    # INTENTO OBLIGATORIO GEMINI 1.5 FLASH (Para cuota 1500 RPM)
     try:
-        # Buscar modelos disponibles que soporten generateContent
-        mods = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # Priorizar flash 1.5
-        if "models/gemini-1.5-flash" in mods:
-            model_name = "models/gemini-1.5-flash"
-        elif "models/gemini-1.5-flash-latest" in mods:
-            model_name = "models/gemini-1.5-flash-latest"
-        elif "models/gemini-pro" in mods:
-            model_name = "models/gemini-pro"
-        else:
-            model_name = mods[0] # Fallback al primero disponible
-            
-        model = genai.GenerativeModel(model_name)
-    except Exception as e:
-        st.error(f"Error fatal inicializando modelo IA: {e}")
-        return None
+        model = genai.GenerativeModel("gemini-1.5-flash")
+    except:
+        try:
+            model = genai.GenerativeModel("gemini-1.5-flash-latest")
+        except:
+            try:
+                model = genai.GenerativeModel("models/gemini-1.5-flash")
+            except Exception as e:
+                st.error(f"Error fatal inicializando modelo: {e}")
+                return None
 
     try:
         time.sleep(2) 
