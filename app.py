@@ -284,26 +284,26 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
             cell.width = widths[i]
             cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             
-                # Fondo Verde Estilo Sheets (#70ad47)
-                set_cell_background(cell, "70ad47")
+            # Fondo Verde Estilo Sheets (#70ad47)
+            set_cell_background(cell, "70ad47")
+            
+            # Centrar todos los párrafos
+            for p in cell.paragraphs:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # LIMPIEZA VERTICAL STRICTA
+                p.paragraph_format.space_before = Pt(0)
+                p.paragraph_format.space_after = Pt(0)
+                p.paragraph_format.line_spacing = 1
                 
-                # Centrar todos los párrafos
-                for p in cell.paragraphs:
-                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    # LIMPIEZA VERTICAL STRICTA
-                    p.paragraph_format.space_before = Pt(0)
-                    p.paragraph_format.space_after = Pt(0)
-                    p.paragraph_format.line_spacing = 1
+                if p.runs:
+                    run = p.runs[0]
+                else:
+                    run = p.add_run(nombre)
                     
-                    if p.runs:
-                        run = p.runs[0]
-                    else:
-                        run = p.add_run(nombre)
-                        
-                    run.font.bold = True
-                    run.font.color.rgb = RGBColor(0, 0, 0) # Negro
-                    run.font.name = 'Calibri'
-                    run.font.size = Pt(9)
+                run.font.bold = True
+                run.font.color.rgb = RGBColor(0, 0, 0) # Negro
+                run.font.name = 'Calibri'
+                run.font.size = Pt(9)
         
         # Datos
         for item in data_items:
