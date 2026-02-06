@@ -296,6 +296,12 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
         # Limpiar el texto del marcador
         target_paragraph.text = target_paragraph.text.replace('[[TABLA_NOTAS]]', '')
         
+        # FIX: Ajustar espaciado del parrafo del TITULO (asumiendo que esta antes o es general)
+        # Iteramos los primeros parrafos para buscar el titulo y ajustar
+        for p in doc.paragraphs[:5]:
+            if "CERTIFICADO" in p.text.upper():
+                p.paragraph_format.space_after = Pt(0)
+        
         # Crear tabla y aplicar estilo/bordes
         table = doc.add_table(rows=1, cols=7)
         try:
@@ -450,7 +456,10 @@ def procesar_guia_ia(pdf_bytes):
 # ==========================================
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
+if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
+if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
+if 'generado' not in st.session_state: st.session_state['generado'] = False
 
 with st.sidebar:
     st.header("Configuración")
@@ -636,17 +645,18 @@ if st.session_state['ocr_data']:
                     
                     st.success(f"✅ Generado Correctamente: {name_safe}")
                     st.success(f"📍 Certificado generado con la dirección: {v_llegada}")
-                    st.info("ℹ️ Descarga el archivo y súbelo manualmente a Drive.")
-                    st.link_button("📂 Abrir carpeta de Drive para subir archivo", "https://drive.google.com/drive/u/0/folders/1prb1KJZG_BYQSAicLWPP1t_nn58QVO--")
-
+                    st.session_state['generado'] = True
+                    st.rerun()
 
                 except Exception as e: st.error(f"Error: {e}")
             else:
                 st.error("No se pudo conectar con Google Drive.")
 
-        if 'word_buffer' in st.session_state:
+        if st.session_state.get('generado'):
             fn = st.session_state.get('nombre_archivo_final', "Borrador")
             st.download_button("📩 Bajar Copia Local", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+            st.info("ℹ️ Descarga el archivo y súbelo manualmente a Drive.")
+            st.link_button("📂 Abrir carpeta de Drive para subir archivo", "https://drive.google.com/drive/u/0/folders/1prb1KJZG_BYQSAicLWPP1t_nn58QVO--")
 
     with tab2:
         # Registro Manual: Campos vacíos para que el usuario pegue los links
