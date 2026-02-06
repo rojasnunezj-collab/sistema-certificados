@@ -467,7 +467,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados)")
+st.title("Generador de Certificados")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
