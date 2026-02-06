@@ -1,23 +1,37 @@
-Agente, ¡ATENCIÓN! No has eliminado el error 429 porque sigues llamando a gemini-2.5-flash. Aplica este cambio QUIRÚRGICO en app.py sin tocar ninguna de las 600 líneas que funcionan:
+Cómo solucionar el SyntaxError
+Dile esto al agente de Antigravity (o hazlo tú mismo en el editor):
 
-Bucle de Modelos Inteligente: Reemplaza la inicialización de la IA con este bloque. Este código busca qué modelos tienes y prueba el de mayor cuota (1.5-flash) primero:
+Borra todas las líneas de texto en español que están al principio del archivo app.py.
+
+Busca la parte donde se configura la IA y reemplázala con este código:
 
 Python
 import google.generativeai as genai
-# 1. Obtener lista real de modelos disponibles
+import streamlit as st
+
+# --- INICIALIZACIÓN DINÁMICA DE LA IA ---
 try:
-    modelos_reales = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # 2. Priorizar 1.5-flash (cuota alta) y evitar 2.5-flash (cuota baja)
-    opciones = [m for m in modelos_reales if "1.5-flash" in m] + [m for m in modelos_reales if "pro" in m] + modelos_reales
-    nombre_final = opciones[0] # Elige el mejor disponible
-    model = genai.GenerativeModel(nombre_final)
-    st.sidebar.success(f"🤖 Usando: {nombre_final}")
+    # 1. Obtener todos los modelos disponibles para tu cuenta
+    modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. Priorizar modelos con mucha cuota (1.5-flash) y evitar el saturado (2.5-flash)
+    # Buscamos '1.5-flash', si no está, tomamos el primero que no sea '2.5'
+    opciones = [m for m in modelos_disponibles if "1.5-flash" in m]
+    if not opciones:
+        opciones = [m for m in modelos_disponibles if "2.5-flash" not in m]
+    
+    nombre_modelo = opciones[0] if opciones else modelos_disponibles[0]
+    model = genai.GenerativeModel(nombre_modelo)
+    
+    # Esto te confirmará en la web qué modelo se está usando
+    st.sidebar.info(f"🤖 IA Conectada: {nombre_modelo}")
 except Exception as e:
-    st.error("Error al listar modelos. Revisa tu API Key.")
-EL ERROR GRAVE (Fundo/Planta): El Word sigue saliendo mal porque no estás leyendo la pantalla. CAMBIO OBLIGATORIO: En la parte donde creas el Word, el valor de la dirección DEBE ser st.session_state['v_llegada']. No uses la respuesta de la IA, usa lo que el usuario escribió.
+    st.error(f"Error al conectar con la IA: {e}")
+📍 Solución al problema del "Fundo" y el "Peso 0"
+Para que el certificado de Word no salga mal, asegúrate de que el botón de Generar use este mapeo exacto (puedes pedirle al agente que lo verifique):
 
-PESO REAL (No más 0): Asegúrate de que la tabla del Word use el DataFrame st.session_state['df_items']. Si el peso sale 0 en el Word es porque estás usando una variable vacía.
+Dirección de Llegada: ctx['LLEGADA'] = st.session_state.get('v_llegada', '')
 
-TÍTULO: Pon paragraph.paragraph_format.space_after = Pt(0) en el título del Word.
+Datos de la Tabla: tabla_datos = st.session_state.get('df_items')
 
-ORDEN: No limpies código, no borres comentarios. Solo arregla la conexión de la IA y el mapeo de datos.
+Nota Importante: El error "¡ATENCIÓN!" ocurrió porque el agente intentó "escribir" mi mensaje dentro de tu código. Dile: "Agente, borra el comentario en español de la línea 1 y aplica la lógica de selección de modelos en Python puro"
