@@ -70,7 +70,9 @@ if not DRIVE_FOLDER_ID and "DRIVE_FOLDER_ID" in st.secrets:
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
 
 if not DRIVE_FOLDER_ID:
-    print("⚠️ ADVERTENCIA: DRIVE_FOLDER_ID no encontrado. Se requerirá configuración manual en Secrets.")
+    st.error("🚨 ERROR CRÍTICO: 'DRIVE_FOLDER_ID' no configurado en Secrets. El sistema no puede iniciar sin esta variable.")
+    st.info("Por favor, añade `DRIVE_FOLDER_ID = 'tu_id_de_carpeta'` en el archivo .streamlit/secrets.toml")
+    st.stop()
 
 PLANTILLAS = {
     "EPMI S.A.C.": {
@@ -495,7 +497,11 @@ if archivos:
             for c in ['desc','cant','um','peso','fecha_origen','guia_origen','placa_origen']:
                 if c not in df.columns: df[c] = ""
             
-            df['peso'] = df['peso'].replace("", "0.00").replace("None", "0.00")
+            # Formato Inteligente Inicial (Para que la UI se vea consistente)
+            df['peso'] = df['peso'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
+            df['cant'] = df['cant'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
+            df['um'] = df['um'].astype(str).str.upper()
+            
             df['desc'] = df['desc'].apply(limpiar_descripcion)
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
             
