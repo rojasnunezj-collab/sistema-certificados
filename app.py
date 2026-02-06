@@ -436,14 +436,15 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # --- INICIALIZACIÓN DINÁMICA DE LA IA ---
-    try:
-        modelos = [m.name for m in genai.list_models()]
-        # Priorizar 1.5-flash (alta cuota) sobre 2.5 (baja cuota)
-        target = next((m for m in modelos if "1.5-flash" in m), modelos[0])
-        model = genai.GenerativeModel(target)
-    except Exception as e:
-        st.error(f"Error al conectar con la IA: {e}")
+    # SELECCIÓN DE MODELO (Solución al 429)
+    try: 
+        available_models = [m.name for m in genai.list_models()] 
+        # Forzamos 1.5-flash para tener 1,500 peticiones diarias 
+        model_name = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available_models else available_models[0] 
+        model = genai.GenerativeModel(model_name) 
+        st.sidebar.success(f"Conectado a: {model_name}") 
+    except Exception as e: 
+        st.error(f"Error de API: {e}")
         return None
 
     try:
@@ -621,8 +622,8 @@ if st.session_state['ocr_data']:
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]), # OBLIGATORIO: Lo que se ve en pantalla
-                        "LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]), # Fallback
+                        "DIRECCION_LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]), 
+                        "LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]),
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
