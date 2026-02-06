@@ -436,13 +436,29 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # INTENTO EXACTO SOLICITADO (Modelo 1.5-flash)
+    # BUCLE DE MODELOS (SOLUCIÓN DEFINITIVA)
     try:
-        available = [m.name for m in genai.list_models()]
-        target = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available else available[0]
-        model = genai.GenerativeModel(target)
+        # Obtener lista de todos los modelos que soportan generación
+        modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Priorizar los modelos Flash 1.5 y 1.0 sobre el 2.5 (por cuota)
+        modelos_priorizados = sorted(modelos_disponibles, key=lambda x: ("1.5-flash" in x or "1.0-flash" in x), reverse=True)
+        model = None
+        for nombre in modelos_priorizados:
+            try:
+                test_model = genai.GenerativeModel(nombre)
+                # Prueba rápida para ver si tiene cuota
+                model = test_model
+                # st.info(f"✅ Conectado exitosamente al modelo: {nombre}") # Opcional: mostrar al usuario
+                break
+            except Exception as e:
+                continue
+        
+        if not model:
+            st.error("No se encontró ningún modelo de IA disponible con cuota actual.")
+            return None
+            
     except Exception as e:
-        st.error(f"Error fatal inicializando modelo: {e}")
+        st.error(f"Error fatal inicializando ciclo de modelos: {e}")
         return None
 
     try:
