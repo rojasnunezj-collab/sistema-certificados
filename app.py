@@ -62,18 +62,29 @@ if not API_KEY:
     st.error("🚨 ERROR: Falta API KEY. Configura el archivo .env o st.secrets.")
     st.stop()
 
-# --- MODELO DINÁMICO GLOBAL (Solución 404) ---
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 try:
     genai.configure(api_key=API_KEY)
-    # Buscar modelos que soportan generación de contenido
-    modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    # Priorizar 1.5-flash, luego 1.0-flash, luego pro
-    prioridad = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-1.0-flash"]
-    nombre_final = next((m for m in prioridad if m in modelos_disponibles), modelos_disponibles[0])
+    # 1. Obtener modelos
+    todos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    
+    # 2. FILTRO DE SEGURIDAD: Eliminar gemini-2.5 (Causa del 429)
+    # Solo permitimos versiones 1.5 o 1.0
+    seguros = [m for m in todos if "2.5" not in m and ("1.5" in m or "1.0" in m)]
+    
+    # 3. Prioridad estricta para 1.5-flash
+    # Buscamos variantes exactas
+    candidatos = ["models/gemini-1.5-flash", "gemini-1.5-flash", "models/gemini-1.5-flash-latest"]
+    nombre_final = next((c for c in candidatos if c in seguros), None)
+    
+    # Fallback: El primer modelo seguro disponible
+    if not nombre_final:
+        nombre_final = seguros[0] if seguros else "models/gemini-1.5-flash"
+
     model = genai.GenerativeModel(nombre_final)
     st.sidebar.success(f"✅ Motor Activo: {nombre_final}")
 except Exception as e:
-    st.error(f"Error al listar modelos: {e}")
+    st.error(f"Error al iniciar IA: {e}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
@@ -627,8 +638,8 @@ if st.session_state['ocr_data']:
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get('v_llegada', ''), 
-                        "LLEGADA": st.session_state.get('v_llegada', ''),
+                        "DIRECCION_LLEGADA": st.session_state.get("v_llegada", ""), 
+                        "LLEGADA": st.session_state.get("v_llegada", ""),
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
