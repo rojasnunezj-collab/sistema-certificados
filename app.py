@@ -359,19 +359,20 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
         for item in data_items:
             row_cells = table.add_row().cells
             
-            # Preparar valores con Formato Inteligente
-            p_cant = formato_inteligente(limpiar_monto(item.get('cant', '0')))
-            p_peso = formato_inteligente(limpiar_monto(item.get('peso', '0')))
+            # Preparar valores (DIRECTOS del DataFrame ya formateado)
+            # No re-procesamos para evitar errores de doble limpieza (Peso 0)
+            p_cant = str(item.get('cant', ''))
+            p_peso = str(item.get('peso', ''))
             
             vals = [
                 str(item.get('fecha_origen', '')),
                 str(item.get('placa_origen', '')),
                 str(item.get('guia_origen', '')),
-                    str(item.get('desc', '')),
-                    str(p_cant),
-                    str(item.get('um', '')).upper(), # UM en Mayúsculas (DOBLE SEGURIDAD)
-                    str(p_peso) # Solo numero, formato inteligente
-                ]
+                str(item.get('desc', '')),
+                p_cant,
+                str(item.get('um', '')).upper(), # UM en Mayúsculas (DOBLE SEGURIDAD)
+                p_peso 
+            ]
             
             for idx, valor in enumerate(vals):
                 cell = row_cells[idx]
@@ -629,10 +630,10 @@ if st.session_state['ocr_data']:
                         "EMPRESA": v_emi, "RUC_EMPRESA": v_ruc_e, "RUC": v_ruc_e, 
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
-                        "PUNTO_PARTIDA": st.session_state.get("txt_partida", v_partida), 
-                        "DIRECCION_EMPRESA": st.session_state.get("txt_llegada", v_llegada), 
+                        "PUNTO_PARTIDA": st.session_state["txt_partida"], 
+                        "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
-                        "DESTINATARIO_FINAL": st.session_state.get("txt_destinatario", v_dest)
+                        "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
                     doc.render(ctx)
                     buf_tpl = io.BytesIO()
