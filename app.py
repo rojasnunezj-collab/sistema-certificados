@@ -467,7 +467,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados")
+st.title("Generador de Certificados)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -546,7 +546,7 @@ if st.session_state['ocr_data']:
     else:
         v_guia, v_placa = c3.text_input("Guía", formatear_guia(ocr.get('serie'))), c4.text_input("Placa", ocr.get('vehiculo'))
 
-    v_partida = st.text_input("Partida", formato_nompropio(ocr.get('punto_partida','')))
+    v_partida = st.text_input("Partida", formato_nompropio(ocr.get('punto_partida','')), key="txt_partida")
     
     # Construcción de Llegada con Planta/Fundo
     llegada_base = formato_nompropio(ocr.get('punto_llegada',''))
@@ -608,9 +608,10 @@ if st.session_state['ocr_data']:
                         "EMPRESA": v_emi, "RUC_EMPRESA": v_ruc_e, "RUC": v_ruc_e, 
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
-                        "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
+                        "PUNTO_PARTIDA": st.session_state.get("txt_partida", v_partida), 
+                        "DIRECCION_EMPRESA": st.session_state.get("txt_llegada", v_llegada), 
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
-                        "DESTINATARIO_FINAL": v_dest
+                        "DESTINATARIO_FINAL": st.session_state.get("txt_destinatario", v_dest)
                     }
                     doc.render(ctx)
                     buf_tpl = io.BytesIO()
