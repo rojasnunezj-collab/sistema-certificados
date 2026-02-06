@@ -436,22 +436,13 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # MODULO DE AUTOCURACIÓN DE MODELO IA
+    # INTENTO EXACTO SOLICITADO (Modelo 1.5-flash)
     try:
-        # 1. Listar modelos activos con capacidad de generación
-        modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # 2. Estrategia de Selección: Prioridad Absoluta a 1.5-flash (High Quota)
-        # Busca cualquier variante que contenga "1.5-flash"
-        target = next((m for m in modelos if "1.5-flash" in m), None)
-        
-        # 3. Fallback: Si no existe flash, usa el primero disponible (ej. gemini-pro)
-        if not target: 
-             target = modelos[0]
-             
+        available = [m.name for m in genai.list_models()]
+        target = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available else available[0]
         model = genai.GenerativeModel(target)
     except Exception as e:
-        st.error(f"Error fatal autocuración modelo: {e}")
+        st.error(f"Error fatal inicializando modelo: {e}")
         return None
 
     try:
