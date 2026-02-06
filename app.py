@@ -441,13 +441,13 @@ def procesar_guia_ia(pdf_bytes):
     for name in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-1.5-flash-latest']:
         try:
             model = genai.GenerativeModel(name)
-            # Si llega aquí, funcionó
-            st.sidebar.success(f"✅ Conexión exitosa: {name}")
+            # Prueba de instanciación exitosa
             break
         except:
             continue
+            
     if not model:
-        st.error("No se pudo conectar a ningún modelo 1.5-flash. Revisa la versión de google-generativeai.")
+        st.error("Error crítico: No se pudo instanciar gemini-1.5-flash.")
         return None
 
     try:
@@ -624,9 +624,10 @@ if st.session_state['ocr_data']:
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
+                        "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get("txt_llegada", v_llegada), 
-                        "LLEGADA": st.session_state.get("txt_llegada", v_llegada),
+                        "DIRECCION_LLEGADA": v_llegada, # USAR VARIABLE DIRECTA DEL WIDGET
+                        "LLEGADA": v_llegada,           # USAR VARIABLE DIRECTA DEL WIDGET
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
