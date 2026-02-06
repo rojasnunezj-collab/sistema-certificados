@@ -544,11 +544,11 @@ if st.session_state['ocr_data']:
     pf_extra = formato_nompropio(ocr.get('planta_fundo',''))
     val_llegada = f"{llegada_base} - {pf_extra}" if pf_extra and pf_extra not in llegada_base else llegada_base
     
-    v_llegada = st.text_input("Llegada", val_llegada)
-    v_dest = st.text_input("Destinatario", ocr.get('destinatario',''))
+    v_llegada = st.text_input("Llegada", val_llegada, key="txt_llegada")
+    v_dest = st.text_input("Destinatario", ocr.get('destinatario',''), key="txt_destinatario")
 
     v_items = st.data_editor(st.session_state['df_items'], num_rows="dynamic", use_container_width=True,
-        column_config={"guia_origen": st.column_config.TextColumn("Guía", disabled=True)})
+        column_config={"guia_origen": st.column_config.TextColumn("Guía", disabled=True)}, key="editor_items")
     
     c_a, c_b = st.columns(2)
     with c_a:
@@ -606,14 +606,20 @@ if st.session_state['ocr_data']:
                     buf_tpl = io.BytesIO()
                     doc.save(buf_tpl)
 
-                    # 3. Inyectar Tabla
-                    items_para_tabla = st.session_state['df_items'].to_dict('records')
+                    # 3. Inyectar Tabla (Usando v_items editado por usuario)
+                    # Procesar DataFrame antes de inyectar
+                    df_final = v_items.copy()
+                    df_final['um'] = df_final['um'].astype(str).str.upper()
+                    df_final['cant'] = df_final['cant'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
+                    df_final['peso'] = df_final['peso'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
+
+                    items_para_tabla = df_final.to_dict('records')
                     final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla, v_serv)
                     
                     st.session_state['word_buffer'] = final_bytes
                     
-                    # Calcular Peso Total Seguro
-                    peso_t = sum([limpiar_monto(x) for x in v_items['peso']])
+                    # Calcular Peso Total Seguro (Sobre items editados)
+                    peso_t = sum([limpiar_monto(x) for x in df_final['peso']])
                     name_safe = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}".replace("/", "-")
                     st.session_state['nombre_archivo_final'] = name_safe
                     
@@ -629,6 +635,7 @@ if st.session_state['ocr_data']:
                     }
                     
                     st.success(f"✅ Generado Correctamente: {name_safe}")
+                    st.success(f"📍 Certificado generado con la dirección: {v_llegada}")
                     st.info("ℹ️ Descarga el archivo, súbelo a Drive manualmente y registra los links en la pestaña 'Registrar'.")
 
                 except Exception as e: st.error(f"Error: {e}")
