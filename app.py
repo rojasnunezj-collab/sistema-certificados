@@ -130,10 +130,25 @@ def subir_a_drive(contenido_bytes, nombre_archivo):
 # 3. FORMATOS Y UTILIDADES
 # ==========================================
 def limpiar_monto(valor):
-    """Convierte string a float manejando comas y valores no numéricos."""
+    """
+    Convierte string a float manejando comas y puntos extra.
+    Regla: 
+    1. Comas se borran.
+    2. Si hay >1 punto, se mantienen solo el ultimo (el decimal).
+    """
     if not valor: return 0.0
-    s = str(valor).replace(',', '').strip()
-    # Eliminar cualquier caracter no numérico excepto punto
+    s = str(valor).strip()
+    
+    # 1. Eliminar comas siempre
+    s = s.replace(',', '')
+    
+    # 2. Manejo de multiples puntos (ej: 3.580.00 -> 3580.00)
+    if s.count('.') > 1:
+        parts = s.split('.')
+        # Unir todo menos el último con nada, y pegar el último con punto
+        s = "".join(parts[:-1]) + '.' + parts[-1]
+    
+    # 3. Limpieza final caracteres no numéricos
     s = re.sub(r'[^\d.]', '', s)
     try:
         return float(s)
