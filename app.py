@@ -62,6 +62,19 @@ if not API_KEY:
     st.error("🚨 ERROR: Falta API KEY. Configura el archivo .env o st.secrets.")
     st.stop()
 
+# --- MODELO DINÁMICO GLOBAL (Solución 404) ---
+try:
+    genai.configure(api_key=API_KEY)
+    # Buscar modelos que soportan generación de contenido
+    modelos_disponibles = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    # Priorizar 1.5-flash, luego 1.0-flash, luego pro
+    prioridad = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-1.0-flash"]
+    nombre_final = next((m for m in prioridad if m in modelos_disponibles), modelos_disponibles[0])
+    model = genai.GenerativeModel(nombre_final)
+    st.sidebar.success(f"✅ Motor Activo: {nombre_final}")
+except Exception as e:
+    st.error(f"Error al listar modelos: {e}")
+
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
@@ -409,12 +422,9 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
 # 5. INTELIGENCIA ARTIFICIAL (GEMINI)
 # ==========================================
 def procesar_guia_ia(pdf_bytes):
-    try:
-        genai.configure(api_key=API_KEY.strip())
-    except: return None
-
-    # modelo = "gemini-1.5-flash" # Se maneja abajo con try/except
-
+    # EXTRACCIÓN SIN ERRORES (Usa el modelo global)
+    # No re-configuramos aquí para ganar velocidad y usar la conexión global
+    
     prompt = """
     Actúa como experto OCR y extrae los datos de esta Guía de Remisión a JSON:
     {
@@ -435,19 +445,10 @@ def procesar_guia_ia(pdf_bytes):
         ]
     }
     """
-
-    # CONEXIÓN ROBUSTA (IA)
-    model = None
-    for name in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-1.5-flash-latest']:
-        try:
-            model = genai.GenerativeModel(name)
-            # Prueba de instanciación exitosa
-            break
-        except:
-            continue
-            
-    if not model:
-        st.error("Error crítico: No se pudo instanciar gemini-1.5-flash.")
+    
+    # Check si modelo global existe
+    if 'model' not in globals() or not model:
+        st.error("Error: Modelo IA no inicializado globalmente.")
         return None
 
     try:
@@ -626,8 +627,8 @@ if st.session_state['ocr_data']:
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": v_llegada, # USAR VARIABLE DIRECTA DEL WIDGET
-                        "LLEGADA": v_llegada,           # USAR VARIABLE DIRECTA DEL WIDGET
+                        "DIRECCION_LLEGADA": st.session_state.get('v_llegada', ''), 
+                        "LLEGADA": st.session_state.get('v_llegada', ''),
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
