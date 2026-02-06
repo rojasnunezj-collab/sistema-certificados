@@ -467,7 +467,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (V8.1 - Tabla Final)")
+st.title("Generador de Certificados)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -609,7 +609,8 @@ if st.session_state['ocr_data']:
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
-                        "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis
+                        "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
+                        "DESTINATARIO_FINAL": v_dest
                     }
                     doc.render(ctx)
                     buf_tpl = io.BytesIO()
@@ -653,6 +654,7 @@ if st.session_state['ocr_data']:
                 st.error("No se pudo conectar con Google Drive.")
 
         if st.session_state.get('generado'):
+            # Botones persistentes despues de generar
             fn = st.session_state.get('nombre_archivo_final', "Borrador")
             st.download_button("📩 Bajar Copia Local", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
             st.info("ℹ️ Descarga el archivo y súbelo manualmente a Drive.")
