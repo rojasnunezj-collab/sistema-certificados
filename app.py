@@ -127,22 +127,23 @@ def registrar_en_control(datos_fila):
     except: return False
 
 def subir_a_drive(contenido_bytes, nombre_archivo):
+    # Validacion estricta pre-conexion
+    folder_id = DRIVE_FOLDER_ID
+    if not folder_id and "DRIVE_FOLDER_ID" in st.secrets:
+        folder_id = st.secrets["DRIVE_FOLDER_ID"]
+        
+    if not folder_id:
+        st.error("🚨 ERROR: No se puede subir el archivo. Faltan credenciales de DRIVE_FOLDER_ID en Secrets.")
+        return None
+
     drive, _ = obtener_servicios()
     if not drive: return None
     
-    # DEBUG: Verificar ID para evitar subida a root (quota 0)
-    if not DRIVE_FOLDER_ID:
-        st.error("🚨 ERROR CRÍTICO: DRIVE_FOLDER_ID está vacío o no se leyó. Se intentará subir a root (puede fallar por cuota).")
-    else:
-        # Solo info en consola para no ensuciar UI si todo va bien
-        print(f"Subiendo a carpeta ID: {DRIVE_FOLDER_ID}")
-
     try:
         file_metadata = {'name': f"{nombre_archivo}.docx", 'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'}
         
-        # Refuerzo de parents como lista explícita
-        if DRIVE_FOLDER_ID:
-            file_metadata['parents'] = [DRIVE_FOLDER_ID]
+        # Uso OBLIGATORIO de parents
+        file_metadata['parents'] = [folder_id]
         
         media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=True)
         file = drive.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
@@ -151,7 +152,7 @@ def subir_a_drive(contenido_bytes, nombre_archivo):
         err_msg = str(e)
         st.error(f"Error subiendo a Drive: {err_msg}")
         if "storageQuotaExceeded" in err_msg or "403" in err_msg:
-            st.warning("⚠️ CUOTA EXCEDIDA (403): Probablemente DRIVE_FOLDER_ID es incorrecto/vacío y estás subiendo a la cuenta de servicio (0GB). Configura 'DRIVE_FOLDER_ID' en Secrets.")
+            st.warning("⚠️ CUOTA EXCEDIDA (403): Revisa que 'DRIVE_FOLDER_ID' sea de una carpeta compartida con permiso de edición, no la raíz.")
         return None
 
 # ==========================================
@@ -188,15 +189,15 @@ def limpiar_monto(valor):
 def formato_inteligente(valor):
     """
     Formatea números:
-    100.00 -> "100"
-    3580.50 -> "3580.50"
+    100.0 -> "100" (Sin decimales)
+    3580.50 -> "3580.5" (Decimales justos)
     """
     try:
         f = float(valor)
         if f.is_integer():
             return f"{int(f)}"
         else:
-            return f"{f:.2f}"
+            return f"{f}"
     except:
         return str(valor)
 
