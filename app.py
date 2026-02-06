@@ -69,10 +69,10 @@ DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
 if not DRIVE_FOLDER_ID and "DRIVE_FOLDER_ID" in st.secrets:
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
 
-if not DRIVE_FOLDER_ID:
-    st.error("🚨 ERROR CRÍTICO: 'DRIVE_FOLDER_ID' no configurado en Secrets. El sistema no puede iniciar sin esta variable.")
-    st.info("Por favor, añade `DRIVE_FOLDER_ID = 'tu_id_de_carpeta'` en el archivo .streamlit/secrets.toml")
-    st.stop()
+# if not DRIVE_FOLDER_ID:
+#     st.error("🚨 ERROR CRÍTICO: 'DRIVE_FOLDER_ID' no configurado en Secrets. El sistema no puede iniciar sin esta variable.")
+#     st.info("Por favor, añade `DRIVE_FOLDER_ID = 'tu_id_de_carpeta'` en el archivo .streamlit/secrets.toml")
+#     st.stop()
 
 PLANTILLAS = {
     "EPMI S.A.C.": {
@@ -617,9 +617,10 @@ if st.session_state['ocr_data']:
                     name_safe = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}".replace("/", "-")
                     st.session_state['nombre_archivo_final'] = name_safe
                     
-                    # 4. Subir a Drive automáticamente
-                    link_drive = subir_a_drive(final_bytes, name_safe)
-                    st.session_state['link_drive_generado'] = link_drive
+                    # 4. Subida a Drive Manual (Desactivado Auto para evitar 403)
+                    # link_drive = subir_a_drive(final_bytes, name_safe)
+                    link_drive = None 
+                    st.session_state['link_drive_generado'] = "" 
 
                     st.session_state['datos_log_pendientes'] = {
                         "fec_emis": v_fec_emis, "emi": v_emi, "tit": tipo_operacion_simple, 
@@ -627,11 +628,8 @@ if st.session_state['ocr_data']:
                         "cert_name": name_safe, "peso": peso_t              
                     }
                     
-                    if link_drive:
-                        st.success(f"✅ Generado y Subido a Drive: {name_safe}")
-                        st.markdown(f"[📂 Abrir en Drive]({link_drive})")
-                    else:
-                        st.success("✅ Generado (Subida a Drive falló, revisa credenciales)")
+                    st.success(f"✅ Generado Correctamente: {name_safe}")
+                    st.info("ℹ️ Descarga el archivo, súbelo a Drive manualmente y registra los links en la pestaña 'Registrar'.")
 
                 except Exception as e: st.error(f"Error: {e}")
             else:
