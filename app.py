@@ -373,10 +373,10 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
                 cell.width = widths[idx]
                 cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
                 
-                # Centrar todos los párrafos
+                # Centrar todos los párrafos y quitar espacios
                 for p in cell.paragraphs:
                     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    # LIMPIEZA VERTICAL STRICTA
+                    # LIMPIEZA VERTICAL STRICTA (Space After 0)
                     p.paragraph_format.space_before = Pt(0)
                     p.paragraph_format.space_after = Pt(0)
                     p.paragraph_format.line_spacing = 1
@@ -636,7 +636,9 @@ if st.session_state['ocr_data']:
                     
                     st.success(f"✅ Generado Correctamente: {name_safe}")
                     st.success(f"📍 Certificado generado con la dirección: {v_llegada}")
-                    st.info("ℹ️ Descarga el archivo, súbelo a Drive manualmente y registra los links en la pestaña 'Registrar'.")
+                    st.info("ℹ️ Descarga el archivo y súbelo manualmente a Drive.")
+                    st.link_button("📂 Abrir carpeta de Drive para subir archivo", "https://drive.google.com/drive/u/0/folders/1prb1KJZG_BYQSAicLWPP1t_nn58QVO--")
+
 
                 except Exception as e: st.error(f"Error: {e}")
             else:
