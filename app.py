@@ -436,13 +436,20 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # INTENTO DE "AUTOCURACIÓN" DE MODELO (DINÁMICO)
+    # MODULO DE AUTOCURACIÓN DE MODELO IA
     try:
-        # Buscar modelos que soporten generación de contenido
-        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        # Intentar con 1.5-flash primero, si no, el primero de la lista
-        target_model = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available_models else available_models[0]
-        model = genai.GenerativeModel(target_model)
+        # 1. Listar modelos activos con capacidad de generación
+        modelos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # 2. Estrategia de Selección: Prioridad Absoluta a 1.5-flash (High Quota)
+        # Busca cualquier variante que contenga "1.5-flash"
+        target = next((m for m in modelos if "1.5-flash" in m), None)
+        
+        # 3. Fallback: Si no existe flash, usa el primero disponible (ej. gemini-pro)
+        if not target: 
+             target = modelos[0]
+             
+        model = genai.GenerativeModel(target)
     except Exception as e:
         st.error(f"Error fatal autocuración modelo: {e}")
         return None
@@ -622,7 +629,7 @@ if st.session_state['ocr_data']:
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get("txt_llegada", v_llegada), # Alias por seguridad
+                        "DIRECCION_LLEGADA": st.session_state["txt_llegada"], # OBLIGATORIO: Lo que se ve en pantalla
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
