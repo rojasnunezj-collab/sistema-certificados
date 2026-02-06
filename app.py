@@ -361,11 +361,11 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
                 str(item.get('fecha_origen', '')),
                 str(item.get('placa_origen', '')),
                 str(item.get('guia_origen', '')),
-                str(item.get('desc', '')),
-                str(p_cant),
-                str(item.get('um', '')).upper(), # UM en Mayúsculas
-                str(p_peso) # Solo numero, formato inteligente
-            ]
+                    str(item.get('desc', '')),
+                    str(p_cant),
+                    str(item.get('um', '')).upper(), # UM en Mayúsculas (DOBLE SEGURIDAD)
+                    str(p_peso) # Solo numero, formato inteligente
+                ]
             
             for idx, valor in enumerate(vals):
                 cell = row_cells[idx]
@@ -640,8 +640,9 @@ if st.session_state['ocr_data']:
             st.download_button("📩 Bajar Copia Local", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     with tab2:
-        u_d = st.text_input("Link DOC:", value=st.session_state.get('link_drive_generado', ''))
-        u_p = st.text_input("Link PDF:")
+        # Registro Manual: Campos vacíos para que el usuario pegue los links
+        u_d = st.text_input("Link DOC:", value="")
+        u_p = st.text_input("Link PDF:", value="")
         if st.button("🏁 Registrar"):
             if not st.session_state.get('datos_log_pendientes') or not u_d or not u_p:
                 st.warning("⚠️ Faltan datos (Link Doc/PDF o generar primero)")
