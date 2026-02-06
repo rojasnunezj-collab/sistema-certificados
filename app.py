@@ -438,11 +438,10 @@ def procesar_guia_ia(pdf_bytes):
 
     # SELECCIÓN DE MODELO (Solución al 429)
     try: 
-        available_models = [m.name for m in genai.list_models()] 
-        # Forzamos 1.5-flash para tener 1,500 peticiones diarias 
-        model_name = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available_models else available_models[0] 
-        model = genai.GenerativeModel(model_name) 
-        st.sidebar.success(f"Conectado a: {model_name}") 
+        # Forzar el uso de 1.5-flash para tener 1,500 peticiones diarias
+        model_name = "gemini-1.5-flash"
+        model = genai.GenerativeModel(model_name)
+        st.sidebar.success(f"✅ Sistema Activo: {model_name}")
     except Exception as e: 
         st.error(f"Error de API: {e}")
         return None
