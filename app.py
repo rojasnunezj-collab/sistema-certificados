@@ -436,15 +436,16 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # INTENTO OBLIGATORIO GEMINI 1.5 FLASH (Para cuota 1500 RPM)
+    # INTENTO DE "AUTOCURACIÓN" DE MODELO (DINÁMICO)
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
-    except:
-        try:
-            model = genai.GenerativeModel("gemini-pro") 
-        except Exception as e:
-            st.error(f"Error fatal inicializando modelo: {e}")
-            return None
+        # Buscar modelos que soporten generación de contenido
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Intentar con 1.5-flash primero, si no, el primero de la lista
+        target_model = "models/gemini-1.5-flash" if "models/gemini-1.5-flash" in available_models else available_models[0]
+        model = genai.GenerativeModel(target_model)
+    except Exception as e:
+        st.error(f"Error fatal autocuración modelo: {e}")
+        return None
 
     try:
         time.sleep(2) 
