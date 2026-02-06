@@ -18,12 +18,15 @@ from docx.shared import Inches, Pt, RGBColor
 from docx.enum.table import WD_ALIGN_VERTICAL
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import docx.oxml.simpletypes
-from docx.oxml import parse_xml
 from docx.oxml.simpletypes import ST_TwipsMeasure, Twips
-from docx.oxml import OxmlElement
+from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 
-# Monkey patch para corregir error de parsing de floats en Twips (común en plantillas editadas)
+# ==========================================
+# 0. PATCHES & SETUP
+# ==========================================
+
+# Monkey patch para corregir error de parsing de floats en Twips
 original_convert_from_xml = ST_TwipsMeasure.convert_from_xml
 
 @classmethod
@@ -38,16 +41,12 @@ def patch_convert_from_xml(cls, str_value):
 
 ST_TwipsMeasure.convert_from_xml = patch_convert_from_xml
 
-# Cargar variables de entorno
 load_dotenv()
 
-# ==========================================
-# 1. CONFIGURACIÓN
-# ==========================================
 st.set_page_config(page_title="Sistema Certificados", layout="wide")
 
 # ==========================================
-# 2. CREDENCIALES Y CONSTANTES
+# 1. CREDENCIALES Y CONSTANTES
 # ==========================================
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY and "GEMINI_API_KEY" in st.secrets:
@@ -67,11 +66,13 @@ if not API_KEY:
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU" 
 DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
+if not DRIVE_FOLDER_ID and "DRIVE_FOLDER_ID" in st.secrets:
+    DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
 
 PLANTILLAS = {
     "EPMI S.A.C.": {
         "Comercialización/Disposición Final": os.getenv("TEMPLATE_EPMI_ID", "1d09vmlBlW_4yjrrz5M1XM8WpCvzTI4f11pERDbxFvNE"),
-        "Peligroso y No Peligroso": os.getenv("TEMPLATE_EPMI_PELIGROSO_ID", "1QqqVJ2vCiAjiKKGt_zEpaImUB-q3aRurSiXjMEU--eg") # Usando variable o fallback
+        "Peligroso y No Peligroso": os.getenv("TEMPLATE_EPMI_PELIGROSO_ID", "1QqqVJ2vCiAjiKKGt_zEpaImUB-q3aRurSiXjMEU--eg")
     },
     "INECOVE S.A.C.": {
         "Comercialización/Disposición Final": os.getenv("TEMPLATE_INECOVE_ID", "1MPzCwxR538osP3_br4VrTDybplqpTBtB08Jo"),
@@ -80,7 +81,7 @@ PLANTILLAS = {
 }
 
 # ==========================================
-# 3. CONEXIÓN GOOGLE DRIVE/SHEETS
+# 2. CONEXIÓN GOOGLE DRIVE/SHEETS
 # ==========================================
 def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
@@ -126,8 +127,19 @@ def subir_a_drive(contenido_bytes, nombre_archivo):
         return None
 
 # ==========================================
-# 4. FORMATOS Y UTILIDADES
+# 3. FORMATOS Y UTILIDADES
 # ==========================================
+def limpiar_monto(valor):
+    """Convierte string a float manejando comas y valores no numéricos."""
+    if not valor: return 0.0
+    s = str(valor).replace(',', '').strip()
+    # Eliminar cualquier caracter no numérico excepto punto
+    s = re.sub(r'[^\d.]', '', s)
+    try:
+        return float(s)
+    except:
+        return 0.0
+
 def obtener_fin_de_mes(fecha_str):
     try:
         dt = datetime.strptime(fecha_str, "%d/%m/%Y")
@@ -170,7 +182,7 @@ def leer_sheet_seguro(pestaña):
     except: return pd.DataFrame()
 
 # ==========================================
-# 5. LOGICA DOCX (INYECCIÓN DE TABLA)
+# 4. LOGICA DOCX (INYECCIÓN DE TABLA)
 # ==========================================
 def set_borders(table):
     """Fallback para bordes manuales"""
@@ -258,7 +270,7 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
             # Fondo Verde Estilo Sheets (#70ad47)
             set_cell_background(cell, "70ad47")
             
-            # Centrar todos los párrafos (normalmente es uno, pero por seguridad)
+            # Centrar todos los párrafos
             for p in cell.paragraphs:
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 # LIMPIEZA VERTICAL STRICTA
@@ -314,30 +326,26 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
                         run.font.name = 'Calibri'
                         run.font.size = Pt(9)
 
-        # Mover la tabla para que esté justo después del párrafo objetivo
-        # python-docx añade tablas al final por defecto.
-        # Truco: mover el elemento XML de la tabla
+        # Mover tabla después del párrafo
         tbl, p = table._tbl, target_paragraph._p
         p.addnext(tbl)
 
-    # Guardar en nuevo buffer
     new_buffer = io.BytesIO()
     doc.save(new_buffer)
     return new_buffer.getvalue()
 
 # ==========================================
-# 6. INTELIGENCIA ARTIFICIAL
+# 5. INTELIGENCIA ARTIFICIAL (GEMINI)
 # ==========================================
 def procesar_guia_ia(pdf_bytes):
     try:
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    # Modelo
-    modelo_elegido = "gemini-flash-latest"
+    modelo = "gemini-flash-latest"
 
     prompt = """
-    Actúa como experto OCR. Analiza esta Guía de Remisión y extrae JSON estricto:
+    Actúa como experto OCR y extrae los datos de esta Guía de Remisión a JSON:
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
@@ -354,14 +362,11 @@ def procesar_guia_ia(pdf_bytes):
             }
         ]
     }
-    REGLAS:
-    1. Diferencia CANTIDAD (Enteros/Bultos/UND) de PESO (Decimales/KG/KGM).
-    2. Si OBSERVACIONES tiene lugar (FUNDO/PLANTA), agrégalo a punto_partida tras un guion.
     """
 
     try:
         time.sleep(2) 
-        model = genai.GenerativeModel(modelo_elegido)
+        model = genai.GenerativeModel(modelo)
         res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
         
         texto_limpio = res.text.replace("```json", "").replace("```", "")
@@ -372,16 +377,11 @@ def procesar_guia_ia(pdf_bytes):
             return None
 
     except Exception as e:
-        if "429" in str(e):
-            st.error("⏳ Google pide pausa: Espera 1 minuto real antes de intentar de nuevo.")
-        elif "404" in str(e):
-            st.error(f"❌ Modelo no encontrado: {modelo_elegido}")
-        else:
-            st.error(f"❌ Error: {e}")
+        st.error(f"Error IA: {e}")
         return None
 
 # ==========================================
-# 7. INTERFAZ
+# 6. INTERFAZ STREAMLIT
 # ==========================================
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
@@ -393,7 +393,7 @@ with st.sidebar:
     tipo_plantilla = st.selectbox("Plantilla", ["Comercialización/Disposición Final", "Peligroso y No Peligroso"])
     if st.button("Recargar"): st.cache_data.clear(); st.rerun()
 
-st.title("Generador de Certificados (V8.1 - Tabla Injectada)")
+st.title("Generador de Certificados (V8.1 - Tabla Final)")
 
 if 'repo_data' not in st.session_state:
     st.session_state['repo_data'] = {
@@ -413,7 +413,7 @@ if archivos:
         total = len(archivos)
         
         for i, arc in enumerate(archivos):
-            if i > 0: time.sleep(3) # Pausa entre archivos
+            if i > 0: time.sleep(3) # Pausa
             
             d = procesar_guia_ia(arc.read())
             if d:
@@ -441,7 +441,6 @@ if archivos:
             st.success(f"✅ Procesado: {total-errores} correctos.")
         else: st.error("❌ Falló el proceso. Revisa los mensajes de error.")
 
-# EDICIÓN
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
     st.markdown("### Validación")
@@ -506,78 +505,74 @@ if st.session_state['ocr_data']:
     tab1, tab2 = st.tabs(["Generar", "Registrar"])
 
     with tab1:
-        c_gen, c_exc = st.columns(2)
-        with c_gen:
-            if st.button("📄 Generar Word", type="primary"):
-                drive, _ = obtener_servicios()
-                if drive:
-                    try:
-                        # 1. Descargar plantilla
-                        id_p = PLANTILLAS[empresa_firma][tipo_plantilla]
-                        req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-                        fh = io.BytesIO()
-                        dl = MediaIoBaseDownload(fh, req)
-                        done = False
-                        while not done: _, done = dl.next_chunk()
-                        
-                        # 2. Renderizar Docxtpl (variables simples)
-                        doc = DocxTemplate(io.BytesIO(fh.getvalue()))
-                        ctx = {
-                            "CORRELATIVO": v_corr, "TITULO": v_tit, "REGISTRO": v_reg_e,
-                            "EMPRESA": v_emi, "RUC_EMPRESA": v_ruc_e, "RUC": v_ruc_e, 
-                            "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
-                            "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
-                            "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
-                            "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis, 
-                            # "items": []  <-- Ya no lo usamos para tabla nativa
-                        }
-                        doc.render(ctx)
-                        buf_tpl = io.BytesIO()
-                        doc.save(buf_tpl)
+        if st.button("📄 Generar Word", type="primary"):
+            drive, _ = obtener_servicios()
+            if drive:
+                try:
+                    # 1. Descargar plantilla
+                    id_p = PLANTILLAS[empresa_firma][tipo_plantilla]
+                    req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                    fh = io.BytesIO()
+                    dl = MediaIoBaseDownload(fh, req)
+                    done = False
+                    while not done: _, done = dl.next_chunk()
+                    
+                    # 2. Renderizar Docxtpl
+                    doc = DocxTemplate(io.BytesIO(fh.getvalue()))
+                    ctx = {
+                        "CORRELATIVO": v_corr, "TITULO": v_tit, "REGISTRO": v_reg_e,
+                        "EMPRESA": v_emi, "RUC_EMPRESA": v_ruc_e, "RUC": v_ruc_e, 
+                        "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
+                        "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
+                        "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
+                        "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis
+                    }
+                    doc.render(ctx)
+                    buf_tpl = io.BytesIO()
+                    doc.save(buf_tpl)
 
-                        # 3. Inyectar Tabla con python-docx
-                        items_para_tabla = st.session_state['df_items'].to_dict('records')
-                        final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla, v_serv)
-                        
-                        st.session_state['word_buffer'] = final_bytes
-                        
-                        peso_t = sum([float(str(x).replace(',','')) for x in v_items['peso'] if str(x).replace(',','').replace('.','').isdigit()])
-                        name_safe = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}".replace("/", "-")
-                        st.session_state['nombre_archivo_final'] = name_safe
-                        
-                        # 4. Subir a Drive automáticamente
-                        link_drive = subir_a_drive(final_bytes, name_safe)
-                        st.session_state['link_drive_generado'] = link_drive
+                    # 3. Inyectar Tabla
+                    items_para_tabla = st.session_state['df_items'].to_dict('records')
+                    final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla, v_serv)
+                    
+                    st.session_state['word_buffer'] = final_bytes
+                    
+                    # Calcular Peso Total Seguro
+                    peso_t = sum([limpiar_monto(x) for x in v_items['peso']])
+                    name_safe = f"{empresa_firma} - {tipo_operacion_simple} - {v_corr}".replace("/", "-")
+                    st.session_state['nombre_archivo_final'] = name_safe
+                    
+                    # 4. Subir a Drive automáticamente
+                    link_drive = subir_a_drive(final_bytes, name_safe)
+                    st.session_state['link_drive_generado'] = link_drive
 
-                        st.session_state['datos_log_pendientes'] = {
-                            "fec_emis": v_fec_emis, "emi": v_emi, "tit": tipo_operacion_simple, 
-                            "cli": v_cli, "ruc_c": v_ruc_c, "guia": v_guia, "res": v_res,
-                            "cert_name": name_safe, "peso": peso_t              
-                        }
-                        st.success("✅ Generado con éxito")
-                        if link_drive:
-                            st.info(f"☁️ Subido a Drive: {link_drive}")
+                    st.session_state['datos_log_pendientes'] = {
+                        "fec_emis": v_fec_emis, "emi": v_emi, "tit": tipo_operacion_simple, 
+                        "cli": v_cli, "ruc_c": v_ruc_c, "guia": v_guia, "res": v_res,
+                        "cert_name": name_safe, "peso": peso_t              
+                    }
+                    
+                    if link_drive:
+                        st.success(f"✅ Generado y Subido a Drive: {name_safe}")
+                        st.markdown(f"[📂 Abrir en Drive]({link_drive})")
+                    else:
+                        st.success("✅ Generado (Subida a Drive falló, revisa credenciales)")
 
-                    except Exception as e: st.error(f"Error: {e}")
+                except Exception as e: st.error(f"Error: {e}")
+            else:
+                st.error("No se pudo conectar con Google Drive.")
 
-            if 'word_buffer' in st.session_state:
-                fn = st.session_state.get('nombre_archivo_final', "Borrador")
-                st.download_button("📩 Bajar Word", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-
-        with c_exc:
-            df_x = st.session_state['df_items'].copy()
-            out = io.BytesIO()
-            with pd.ExcelWriter(out, engine='xlsxwriter') as w: df_x.to_excel(w, index=False)
-            fn_x = st.session_state.get('nombre_archivo_final', "Tabla")
-            st.download_button("📊 Bajar Excel", out.getvalue(), f"Tabla {fn_x}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        if 'word_buffer' in st.session_state:
+            fn = st.session_state.get('nombre_archivo_final', "Borrador")
+            st.download_button("📩 Bajar Copia Local", st.session_state['word_buffer'], f"{fn}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
 
     with tab2:
         u_d = st.text_input("Link DOC:", value=st.session_state.get('link_drive_generado', ''))
         u_p = st.text_input("Link PDF:")
         if st.button("🏁 Registrar"):
             if not st.session_state.get('datos_log_pendientes') or not u_d or not u_p:
-                st.warning("⚠️ Faltan datos")
+                st.warning("⚠️ Faltan datos (Link Doc/PDF o generar primero)")
             else:
                 d = st.session_state['datos_log_pendientes']
                 f = [d['fec_emis'], d['emi'], d['tit'], d['cli'], d['ruc_c'], d['guia'], "FINALIZADO", d['cert_name'], u_d, u_p]
-                if registrar_en_control(f): st.success("✅ Registrado"); st.balloons()
+                if registrar_en_control(f): st.success("✅ Registrado en Sheets"); st.balloons()
