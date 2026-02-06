@@ -436,18 +436,18 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # SELECCIÓN DE MODELO (Solución al 429 y 404)
-    try: 
-        # Intentar con el nombre corto, la librería añade el resto
+    # CONEXIÓN ROBUSTA (IA)
+    model = None
+    for name in ['gemini-1.5-flash', 'models/gemini-1.5-flash', 'gemini-1.5-flash-latest']:
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
+            model = genai.GenerativeModel(name)
+            # Si llega aquí, funcionó
+            st.sidebar.success(f"✅ Conexión exitosa: {name}")
+            break
         except:
-            # Respaldo por si la versión de la librería es antigua
-            model = genai.GenerativeModel('models/gemini-1.5-flash')
-            
-        st.sidebar.success(f"✅ Sistema Activo: gemini-1.5-flash")
-    except Exception as e: 
-        st.error(f"Error de API: {e}")
+            continue
+    if not model:
+        st.error("No se pudo conectar a ningún modelo 1.5-flash. Revisa la versión de google-generativeai.")
         return None
 
     try:
@@ -625,8 +625,8 @@ if st.session_state['ocr_data']:
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
                         "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]), 
-                        "LLEGADA": st.session_state.get("v_llegada", st.session_state["txt_llegada"]),
+                        "DIRECCION_LLEGADA": st.session_state.get("txt_llegada", v_llegada), 
+                        "LLEGADA": st.session_state.get("txt_llegada", v_llegada),
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
