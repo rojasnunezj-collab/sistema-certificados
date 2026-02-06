@@ -412,7 +412,7 @@ def procesar_guia_ia(pdf_bytes):
         genai.configure(api_key=API_KEY.strip())
     except: return None
 
-    modelo = "gemini-1.5-flash-latest"
+    # modelo = "gemini-1.5-flash" # Se maneja abajo con try/except
 
     prompt = """
     Actúa como experto OCR y extrae los datos de esta Guía de Remisión a JSON:
@@ -435,9 +435,19 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
+    # INTENTO ROBUSTO DE MODELO
+    try:
+        model = genai.GenerativeModel("gemini-1.5-flash")
+    except:
+        try:
+            model = genai.GenerativeModel("gemini-pro")
+        except Exception as e:
+            st.error(f"Error fatal modelo IA: {e}")
+            return None
+
     try:
         time.sleep(2) 
-        model = genai.GenerativeModel(modelo)
+        # model ya esta instanciado arriba
         res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
         
         texto_limpio = res.text.replace("```json", "").replace("```", "")
