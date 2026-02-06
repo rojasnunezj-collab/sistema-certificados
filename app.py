@@ -69,6 +69,9 @@ DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
 if not DRIVE_FOLDER_ID and "DRIVE_FOLDER_ID" in st.secrets:
     DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
 
+if not DRIVE_FOLDER_ID:
+    print("⚠️ ADVERTENCIA: DRIVE_FOLDER_ID no encontrado. Se requerirá configuración manual en Secrets.")
+
 PLANTILLAS = {
     "EPMI S.A.C.": {
         "Comercialización/Disposición Final": os.getenv("TEMPLATE_EPMI_ID", "1d09vmlBlW_4yjrrz5M1XM8WpCvzTI4f11pERDbxFvNE"),
@@ -88,8 +91,16 @@ def obtener_servicios():
     creds = None
     try:
         if "gcp_service_account" in st.secrets:
-            creds = service_account.Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-    except: pass
+            # FIX: Auto-correcion de typos en secrets (ej: https=// -> https://)
+            info = dict(st.secrets["gcp_service_account"])
+            for k, v in info.items():
+                if isinstance(v, str):
+                    info[k] = v.replace("https=//", "https://")
+            
+            creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+    except Exception as e:
+        st.error(f"⚠️ Error de Autenticación: Revisa el formato de tus credenciales en Secrets. {e}")
+        return None, None
 
     if not creds:
         try:
@@ -98,7 +109,9 @@ def obtener_servicios():
 
     try:
         return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
-    except: return None, None
+    except Exception as e:
+        st.error(f"⚠️ Error conectando con Google API: {e}")
+        return None, None
 
 def registrar_en_control(datos_fila):
     _, sheets = obtener_servicios()
@@ -169,6 +182,21 @@ def limpiar_monto(valor):
         return float(s)
     except:
         return 0.0
+
+def formato_inteligente(valor):
+    """
+    Formatea números:
+    100.00 -> "100"
+    3580.50 -> "3580.50"
+    """
+    try:
+        f = float(valor)
+        if f.is_integer():
+            return f"{int(f)}"
+        else:
+            return f"{f:.2f}"
+    except:
+        return str(valor)
 
 def obtener_fin_de_mes(fecha_str):
     try:
@@ -322,15 +350,18 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
         for item in data_items:
             row_cells = table.add_row().cells
             
-            # Preparar valores
+            # Preparar valores con Formato Inteligente
+            p_cant = formato_inteligente(limpiar_monto(item.get('cant', '0')))
+            p_peso = formato_inteligente(limpiar_monto(item.get('peso', '0')))
+            
             vals = [
                 str(item.get('fecha_origen', '')),
                 str(item.get('placa_origen', '')),
                 str(item.get('guia_origen', '')),
                 str(item.get('desc', '')),
-                str(item.get('cant', '')),
-                str(item.get('um', '')),
-                f"{str(item.get('peso', '0'))}" # Solo numero, sin kg
+                str(p_cant),
+                str(item.get('um', '')).upper(), # UM en Mayúsculas
+                str(p_peso) # Solo numero, formato inteligente
             ]
             
             for idx, valor in enumerate(vals):
@@ -382,6 +413,7 @@ def procesar_guia_ia(pdf_bytes):
         "vehiculo": "PLACA", 
         "punto_partida": "Dirección completa", 
         "punto_llegada": "Dirección completa", 
+        "planta_fundo": "Extraer info de planta/fundo desde observaciones si existe",
         "destinatario": "Razón Social", 
         "items": [
             {
@@ -499,7 +531,13 @@ if st.session_state['ocr_data']:
         v_guia, v_placa = c3.text_input("Guía", formatear_guia(ocr.get('serie'))), c4.text_input("Placa", ocr.get('vehiculo'))
 
     v_partida = st.text_input("Partida", formato_nompropio(ocr.get('punto_partida','')))
-    v_llegada = st.text_input("Llegada", formato_nompropio(ocr.get('punto_llegada','')))
+    
+    # Construcción de Llegada con Planta/Fundo
+    llegada_base = formato_nompropio(ocr.get('punto_llegada',''))
+    pf_extra = formato_nompropio(ocr.get('planta_fundo',''))
+    val_llegada = f"{llegada_base} - {pf_extra}" if pf_extra and pf_extra not in llegada_base else llegada_base
+    
+    v_llegada = st.text_input("Llegada", val_llegada)
     v_dest = st.text_input("Destinatario", ocr.get('destinatario',''))
 
     v_items = st.data_editor(st.session_state['df_items'], num_rows="dynamic", use_container_width=True,
