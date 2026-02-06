@@ -436,12 +436,16 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
 
-    # SELECCIÓN DE MODELO (Solución al 429)
+    # SELECCIÓN DE MODELO (Solución al 429 y 404)
     try: 
-        # Forzar el uso de 1.5-flash para tener 1,500 peticiones diarias
-        model_name = "gemini-1.5-flash"
-        model = genai.GenerativeModel(model_name)
-        st.sidebar.success(f"✅ Sistema Activo: {model_name}")
+        # Intentar con el nombre corto, la librería añade el resto
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+        except:
+            # Respaldo por si la versión de la librería es antigua
+            model = genai.GenerativeModel('models/gemini-1.5-flash')
+            
+        st.sidebar.success(f"✅ Sistema Activo: gemini-1.5-flash")
     except Exception as e: 
         st.error(f"Error de API: {e}")
         return None
