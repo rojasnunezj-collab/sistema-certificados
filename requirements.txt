@@ -1,8 +1,4 @@
 streamlit
-pandas
+python-dotenv
+python-docx
 google-generativeai
-google-api-python-client
-google-auth
-docxtpl
-xlsxwriter
-openpyxl
