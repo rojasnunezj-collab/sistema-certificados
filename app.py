@@ -131,18 +131,20 @@ def subir_a_drive(contenido_bytes, nombre_archivo):
 # ==========================================
 def limpiar_monto(valor):
     """
-    Convierte string a float manejando comas y puntos extra.
-    Regla: 
-    1. Comas se borran.
-    2. Si hay >1 punto, se mantienen solo el ultimo (el decimal).
+    Convierte string a float.
+    Maneja formato europeo/latino intercambiando comas por puntos para
+    usar la lógica de split (mantener último punto como decimal).
+    Ej: 3.700,00 -> 3.700.00 -> 3700.00
+    Ej: 3,700.00 -> 3.700.00 -> 3700.00
     """
     if not valor: return 0.0
     s = str(valor).strip()
     
-    # 1. Eliminar comas siempre
-    s = s.replace(',', '')
+    # 1. Unificar separadores: todo a puntos
+    s = s.replace(',', '.')
     
-    # 2. Manejo de multiples puntos (ej: 3.580.00 -> 3580.00)
+    # 2. Manejo de multiples puntos (ej: 3.580.00 o 3.700.00)
+    # Si hay más de un punto, asumimos que solo el último es decimal
     if s.count('.') > 1:
         parts = s.split('.')
         # Unir todo menos el último con nada, y pegar el último con punto
@@ -282,26 +284,26 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
             cell.width = widths[i]
             cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
             
-            # Fondo Verde Estilo Sheets (#70ad47)
-            set_cell_background(cell, "70ad47")
-            
-            # Centrar todos los párrafos
-            for p in cell.paragraphs:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                # LIMPIEZA VERTICAL STRICTA
-                p.paragraph_format.space_before = Pt(0)
-                p.paragraph_format.space_after = Pt(0)
-                p.paragraph_format.line_spacing = 1
+                # Fondo Verde Estilo Sheets (#70ad47)
+                set_cell_background(cell, "70ad47")
                 
-                if p.runs:
-                    run = p.runs[0]
-                else:
-                    run = p.add_run(nombre)
+                # Centrar todos los párrafos
+                for p in cell.paragraphs:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    # LIMPIEZA VERTICAL STRICTA
+                    p.paragraph_format.space_before = Pt(0)
+                    p.paragraph_format.space_after = Pt(0)
+                    p.paragraph_format.line_spacing = 1
                     
-                run.font.bold = True
-                run.font.color.rgb = RGBColor(0, 0, 0) # Negro
-                run.font.name = 'Calibri'
-                run.font.size = Pt(9)
+                    if p.runs:
+                        run = p.runs[0]
+                    else:
+                        run = p.add_run(nombre)
+                        
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(0, 0, 0) # Negro
+                    run.font.name = 'Calibri'
+                    run.font.size = Pt(9)
         
         # Datos
         for item in data_items:
@@ -315,7 +317,7 @@ def inyectar_tabla_en_docx(doc_io, data_items, servicio_global):
                 str(item.get('desc', '')),
                 str(item.get('cant', '')),
                 str(item.get('um', '')),
-                f"{str(item.get('peso', '0'))} kg" if not 'kg' in str(item.get('peso', '0')).lower() else str(item.get('peso', '0'))
+                f"{str(item.get('peso', '0'))}" # Solo numero, sin kg
             ]
             
             for idx, valor in enumerate(vals):
