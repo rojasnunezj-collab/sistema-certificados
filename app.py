@@ -442,14 +442,21 @@ def procesar_guia_ia(pdf_bytes):
     # EXTRACCIÓN SIN ERRORES (Usa el modelo global)
     # No re-configuramos aquí para ganar velocidad y usar la conexión global
     
+    # 1. DEFINIR EQUIPO DE MODELOS (Sistema de Relevos)
+    modelos_equipo = [
+        "models/gemini-2.5-flash-preview-09-2025",  # Titular (Mejor calidad, poca cuota)
+        "models/gemini-robotics-er-1.5-preview",    # Suplente 1 (Bueno)
+        "models/gemini-1.5-flash"                   # Suplente 2 (Alta capacidad, salvavidas)
+    ]
+
     prompt = """
     Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada, Dirección de Partida, N° Guía y la Tabla de Pesos.
     REGLAS ESTRICTAS:
     - N° Guía: Extraer Serie-Numero completo.
-    - Placa: IMPORTANTE: Busca la PLACA del vehículo exhaustivamente en todo el encabezado. Es un dato obligatorio.
+    - Placa: Busca exhaustivamente la PLACA en todo el documento. Es un dato obligatorio.
     - Tabla: Extraer items con descripción completa.
-    - PESOS (ANTI-ALUCINACIÓN): Si el peso no está explícito en números, pon 0.00. NO CALCULES NI ESTIMES PESOS.
-    - Para la Dirección de Partida: Extrae la Dirección Principal. LUEGO, revisa el campo OBSERVACIONES. Si encuentras un nombre de Fundo, Planta o Predio, agrégalo al final separado por un guion. Formato: [Dirección] - [Fundo/Planta]. Ejemplo: Panamericana Km 140 - Fundo Santa Rosa.
+    - PESOS (ANTI-ALUCINACIÓN): Si no hay peso numérico explícito, pon 0.00. NO CALCULES NI ESTIMES PESOS.
+    - Para la Dirección de Partida: Extrae Dirección Principal. LUEGO busca en OBSERVACIONES nombre de Fundo/Planta. Únelos con guion: [Dirección] - [Fundo]. Ejemplo: Panamericana Km 140 - Fundo Santa Rosa.
     
     JSON Esperado:
     {
@@ -470,24 +477,33 @@ def procesar_guia_ia(pdf_bytes):
     }
     """
     
-    if 'model' not in globals() or not model:
-        st.error("Error: Modelo IA no inicializado globalmente.")
-        return None
+    # BUCLE DE INTENTOS (Failover Loop)
+    resultado_json = None
+    
+    for nombre_modelo in modelos_equipo:
+        try:
+            # Instanciar modelo específico del turno
+            model_turno = genai.GenerativeModel(nombre_modelo)
+            
+            # Intentar procesar
+            res = model_turno.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
+            
+            # Si llegamos aquí, funcionó
+            texto_limpio = res.text.replace("```json", "").replace("```", "")
+            match = re.search(r'\{.*\}', texto_limpio, re.DOTALL)
+            if match:
+                resultado_json = json.loads(match.group(0))
+                st.toast(f"✅ Procesado con éxito usando: {nombre_modelo}")
+                break # ROMPER EL BUCLE, YA TENEMOS DATOS
+                
+        except Exception as e:
+            # Si falla (429, 404, etc), avisar y probar siguiente
+            print(f"Fallo con {nombre_modelo}: {e}")
+            st.warning(f"⚠️ {nombre_modelo} falló o está saturado. Intentando con el siguiente...")
+            time.sleep(1) # Pequeña pausa
+            continue
 
-    try:
-        time.sleep(1) 
-        res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
-        
-        texto_limpio = res.text.replace("```json", "").replace("```", "")
-        match = re.search(r'\{.*\}', texto_limpio, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
-        else:
-            return None
-
-    except Exception as e:
-        st.error(f"Error IA: {e}")
-        return None
+    return resultado_json
 
 # ==========================================
 # 6. INTERFAZ STREAMLIT
