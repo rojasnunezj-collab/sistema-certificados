@@ -439,25 +439,26 @@ def procesar_guia_ia(pdf_bytes):
     prompt = """
     Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada, Dirección de Partida, N° Guía y la Tabla de Pesos.
     REGLAS ESTRICTAS:
-    - Dirección Partida y Llegada: Si hay referencia a (FUNDO / PLANTA / PARCELA), DEBE incluirse en el texto extraído.
+    - Dirección Partida y Llegada: IMPORTANTE extraer la dirección COMPLETA. Si figura nombre de FUNDO, PLANTA, LOTE o PARCELA entre paréntesis o al final, DEBE INCLUIRSE.
     - N° Guía: Extraer Serie-Numero completo.
     - Placa: Extraer placa del vehículo y carreta si existe.
     - Tabla: Extraer items con descripción completa.
+    - PESOS (ANTI-ALUCINACIÓN): Si la unidad es 'UNID', 'UND', 'UNIDADES' y la guía NO tiene un peso explícito para ese ítem, DEVUELVE 0.00. NO CALCULES NI ESTIMES PESOS.
     
     JSON Esperado:
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
         "vehiculo": "PLACA", 
-        "punto_partida": "Dirección Completa (CON FUNDO/PLANTA)", 
-        "punto_llegada": "Dirección Completa (CON FUNDO/PLANTA)", 
+        "punto_partida": "Dirección Completa (INCLUYENDO FUNDO/PLANTA)", 
+        "punto_llegada": "Dirección Completa (INCLUYENDO FUNDO/PLANTA)", 
         "destinatario": "Razón Social", 
         "items": [
             {
                 "desc": "Descripción del bien", 
                 "cant": "Número", 
                 "um": "Unidad (KG, UNID, GLN)", 
-                "peso": "Peso"
+                "peso": "Peso (0.00 si es UNID y no explícito)"
             }
         ]
     }
@@ -553,12 +554,13 @@ if st.session_state['ocr_data'] is not None:
     ocr = st.session_state['ocr_data']
     st.markdown("### Validación")
     
-    # CSS Correlativo: Solo al INPUT
+    # CSS Correlativo: Uso de aria-label para targeting preciso
     st.markdown('''
             <style>
-            div[data-testid="stTextInput"]:has(label:contains("Correlativo")) input {
+            input[aria-label="Correlativo"] {
                 background-color: #FFFF00 !important;
                 color: black !important;
+                font-weight: bold !important;
             }
             </style>
         ''', unsafe_allow_html=True)
@@ -590,6 +592,7 @@ if st.session_state['ocr_data'] is not None:
     # FIX: Definir variables v_guia y v_placa para uso posterior
     v_guia = c3.text_input("Guía", v_guia_ref, disabled=True)
     v_placa = c4.text_input("Placa", v_placa_ref, disabled=True)
+
 
     # Sync Partida
     partida_base = formato_nompropio(ocr.get('punto_partida',''))
