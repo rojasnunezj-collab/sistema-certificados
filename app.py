@@ -64,45 +64,38 @@ if not API_KEY:
 
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
-def conectar_modelo_robusto():
-    """Prueba modelos en cascada hasta encontrar uno que responda."""
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+def get_safe_model():
+    """ Solo conecta a modelos con alta cuota confirmada. Ignora versiones 'preview', 'experimental', '2.0' o '2.5' que tienen limite 0. """
     try:
-        # 1. Obtener catálogo real de Google
         genai.configure(api_key=API_KEY)
-        todos = genai.list_models()
-        disponibles = [m.name for m in todos if 'generateContent' in m.supported_generation_methods]
+        # LISTA BLANCA: Solo estos modelos están permitidos.
+        # El orden importa: Priorizamos 1.5 Flash por su cuota de 1500 RPM.
+        safe_list = [
+            "models/gemini-1.5-flash", 
+            "gemini-1.5-flash", 
+            "models/gemini-1.5-flash-latest", 
+            "models/gemini-1.5-pro", # Respaldo lento pero seguro
+            "gemini-1.5-pro"
+        ]
 
-        # 2. Ordenar candidatos: Preferimos 'flash' y '1.5', evitamos '2.5' al inicio
-        #    (Esto no es hardcode, es orden de prueba)
-        candidatos = sorted(disponibles, key=lambda x: (
-            0 if '1.5-flash' in x else 1,  # Intentar 1.5 Flash primero (Cuota alta)
-            0 if 'flash' in x else 1,      # Luego otros Flash
-            0 if 'pro' in x else 1         # Luego Pro
-        ))
-        
-        # 3. BUCLE DE VIDA O MUERTE
-        for nombre_modelo in candidatos:
-            # FILTRO DE SEGURIDAD: Saltamos los que sabemos que bloquean (2.5 / experimental)
-            if '2.5' in nombre_modelo or 'experimental' in nombre_modelo or 'preview' in nombre_modelo:
-                continue 
-                
+        for m_name in safe_list:
             try:
-                # PRUEBA DE FUEGO: Intentamos instanciar
-                model_inst = genai.GenerativeModel(nombre_modelo)
-                return model_inst, nombre_modelo # ¡Éxito! Retornamos el ganador
+                # Intentamos conectar. Si la API no lo reconoce, saltará al except.
+                model_inst = genai.GenerativeModel(m_name)
+                return model_inst, m_name
             except Exception:
-                continue # Si falla, probamos el siguiente sin llorar
+                continue # Si falla, prueba el siguiente de la lista blanca
         
-        # 4. Último recurso si todo falla
-        return genai.GenerativeModel("models/gemini-1.5-flash"), "models/gemini-1.5-flash (Forzado)"
+        # Fallback final si todo falla (aunque es improbable)
+        return genai.GenerativeModel("models/gemini-1.5-flash"), "gemini-1.5-flash (Forced)"
         
     except Exception as e:
         st.error(f"Error fatal de conexión: {e}")
         return None, None
 
-model, nombre_activo = conectar_modelo_robusto()
-if nombre_activo:
-    st.sidebar.success(f"� Conectado a: {nombre_activo}")
+model, nombre_modelo_activo = get_safe_model()
+st.sidebar.success(f"🟢 Motor Estable: {nombre_modelo_activo}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
