@@ -437,7 +437,7 @@ def procesar_guia_ia(pdf_bytes):
     # No re-configuramos aquí para ganar velocidad y usar la conexión global
     
     prompt = """
-    Actúa como experto OCR y extrae los datos de esta Guía de Remisión a JSON:
+    Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada (priorizando nombres de Fundos o Plantas entre paréntesis) y la Tabla de Pesos. No omitas ningún campo anterior.
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
@@ -537,7 +537,10 @@ if archivos:
             # Formato Inteligente Inicial (Para que la UI se vea consistente)
             df['peso'] = df['peso'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
             df['cant'] = df['cant'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
-            df['um'] = df['um'].astype(str).str.upper()
+            
+            # APLICANDO REGLAS DE FORMATO: Descripcion Mayusculas y UM Mapping
+            df['desc'] = df['desc'].astype(str).str.upper()
+            df['um'] = df['um'].apply(lambda x: 'KG' if 'KILO' in str(x).upper() else 'GLN' if 'GALO' in str(x).upper() else str(x).upper())
             
             df['desc'] = df['desc'].apply(limpiar_descripcion)
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
@@ -549,6 +552,19 @@ if archivos:
 if st.session_state['ocr_data']:
     ocr = st.session_state['ocr_data']
     st.markdown("### Validación")
+    
+    # CSS para Correlativo Amarillo (Soporte para stNumberInput y stTextInput)
+    st.markdown('''
+            <style>
+            /* Solo afecta al contenedor que tiene el label 'Correlativo' */
+            div[data-testid="stNumberInput"]:has(label:contains("Correlativo")) input,
+            div[data-testid="stTextInput"]:has(label:contains("Correlativo")) input {
+                background-color: #FFFF00 !important;
+                color: black !important;
+            }
+            </style>
+        ''', unsafe_allow_html=True)
+
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
     fecha_base = normalizar_fecha(ocr.get('fecha'))
@@ -580,7 +596,10 @@ if st.session_state['ocr_data']:
     pf_extra = formato_nompropio(ocr.get('planta_fundo',''))
     val_llegada = f"{llegada_base} - {pf_extra}" if pf_extra and pf_extra not in llegada_base else llegada_base
     
-    v_llegada = st.text_input("Llegada", val_llegada, key="txt_llegada")
+    # FIX: Sync directo con session_state para Word
+    if "v_llegada" not in st.session_state: st.session_state["v_llegada"] = val_llegada
+    v_llegada = st.text_input("Llegada", key="v_llegada") # Se vincula solo a v_llegada
+    
     v_dest = st.text_input("Destinatario", ocr.get('destinatario',''), key="txt_destinatario")
 
     v_items = st.data_editor(st.session_state['df_items'], num_rows="dynamic", use_container_width=True,
@@ -616,7 +635,7 @@ if st.session_state['ocr_data']:
     tab1, tab2 = st.tabs(["Generar", "Registrar"])
 
     with tab1:
-        if st.button("📄 Generar Word", type="primary"):
+        if st.button("COMERCIALIZACION (FIN DE MES) DISPOSICION FINAL +2", type="primary"):
             drive, _ = obtener_servicios()
             if drive:
                 try:
@@ -636,10 +655,9 @@ if st.session_state['ocr_data']:
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
                         "PUNTO_PARTIDA": st.session_state["txt_partida"], 
-                        "PUNTO_PARTIDA": st.session_state["txt_partida"], 
-                        "DIRECCION_EMPRESA": st.session_state["txt_llegada"], 
-                        "DIRECCION_LLEGADA": st.session_state.get("v_llegada", ""), 
-                        "LLEGADA": st.session_state.get("v_llegada", ""),
+                        "DIRECCION_EMPRESA": st.session_state["v_llegada"], # Changed key usage
+                        "DIRECCION_LLEGADA": st.session_state["v_llegada"], # Changed key usage
+                        "LLEGADA": st.session_state["v_llegada"], # Changed key usage
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
