@@ -63,61 +63,46 @@ if not API_KEY:
     st.stop()
 
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
-def get_best_model_dynamic():
-    """Algoritmo de selección con penalización severa al modelo 2.5"""
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+def conectar_modelo_robusto():
+    """Prueba modelos en cascada hasta encontrar uno que responda."""
     try:
+        # 1. Obtener catálogo real de Google
         genai.configure(api_key=API_KEY)
-        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        scored_models = []
+        todos = genai.list_models()
+        disponibles = [m.name for m in todos if 'generateContent' in m.supported_generation_methods]
 
-        for m_name in all_models:
-            score = 0
-            name_lower = m_name.lower()
-            
-            # --- BONIFICACIONES (LO QUE QUEREMOS) ---
-            if "gemini-1.5-flash" in name_lower:
-                score += 10000  # Prioridad absoluta (1500 req/día)
-            elif "1.5" in name_lower and "flash" in name_lower:
-                score += 5000
-            elif "pro" in name_lower:
-                score += 1000
+        # 2. Ordenar candidatos: Preferimos 'flash' y '1.5', evitamos '2.5' al inicio
+        #    (Esto no es hardcode, es orden de prueba)
+        candidatos = sorted(disponibles, key=lambda x: (
+            0 if '1.5-flash' in x else 1,  # Intentar 1.5 Flash primero (Cuota alta)
+            0 if 'flash' in x else 1,      # Luego otros Flash
+            0 if 'pro' in x else 1         # Luego Pro
+        ))
+        
+        # 3. BUCLE DE VIDA O MUERTE
+        for nombre_modelo in candidatos:
+            # FILTRO DE SEGURIDAD: Saltamos los que sabemos que bloquean (2.5 / experimental)
+            if '2.5' in nombre_modelo or 'experimental' in nombre_modelo or 'preview' in nombre_modelo:
+                continue 
                 
-            # --- PENALIZACIONES (LO QUE BLOQUEA - ERROR 429) ---
-            # El 2.5 tiene límite de 20 peticiones. ¡PROHIBIDO!
-            if "2.5" in name_lower:
-                score -= 1000000 
-            if "experimental" in name_lower or "preview" in name_lower or "robotics" in name_lower:
-                score -= 1000000
-                
-            scored_models.append((score, m_name))
+            try:
+                # PRUEBA DE FUEGO: Intentamos instanciar
+                model_inst = genai.GenerativeModel(nombre_modelo)
+                return model_inst, nombre_modelo # ¡Éxito! Retornamos el ganador
+            except Exception:
+                continue # Si falla, probamos el siguiente sin llorar
         
-        # Ordenar: El puntaje más alto gana
-        scored_models.sort(key=lambda x: x[0], reverse=True)
+        # 4. Último recurso si todo falla
+        return genai.GenerativeModel("models/gemini-1.5-flash"), "models/gemini-1.5-flash (Forzado)"
         
-        if scored_models:
-            winner = scored_models[0][1]
-            # Doble chequeo de seguridad
-            if "2.5" in winner: 
-                return "models/gemini-1.5-flash" # Fallback forzado si el ganador sigue siendo malo
-            return winner
-            
-        return "models/gemini-1.5-flash" # Fallback por defecto
-        
-    except Exception:
-        return "models/gemini-1.5-flash"
+    except Exception as e:
+        st.error(f"Error fatal de conexión: {e}")
+        return None, None
 
-try:
-    # 1. Obtener el mejor modelo dinámicamente
-    nombre_modelo = get_best_model_dynamic()
-    
-    # 2. Inicializar el motor
-    model = genai.GenerativeModel(nombre_modelo)
-    
-    # 3. Mostrar en sidebar (SOLO UNA VEZ)
-    st.sidebar.success(f"🚀 Motor Dinámico: {nombre_modelo}")
-
-except Exception as e: 
-    st.error(f"Error crítico al iniciar modelo: {e}")
+model, nombre_activo = conectar_modelo_robusto()
+if nombre_activo:
+    st.sidebar.success(f"� Conectado a: {nombre_activo}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
