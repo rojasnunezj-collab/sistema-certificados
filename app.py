@@ -68,32 +68,34 @@ if not API_KEY:
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
-st.sidebar.title("🔧 Diagnóstico de Modelos")
-try:
-    genai.configure(api_key=API_KEY)
-    # Listar todos los modelos disponibles para tu API Key
-    lista_modelos = []
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            lista_modelos.append(m.name)
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+def get_user_verified_model():
+    """
+    Prioridad 1: gemini-2.5-flash-preview-09-2025 (El más estable, lee todo).
+    Prioridad 2: gemini-robotics-er-1.5-preview (Backup, a veces falla en placa).
+    """
+    # Lista exacta probada por el usuario
+    priority_list = [
+        "models/gemini-2.5-flash-preview-09-2025",
+        "models/gemini-robotics-er-1.5-preview"
+    ]
+    
+    for model_name in priority_list:
+        try:
+            genai.configure(api_key=API_KEY)
+            model = genai.GenerativeModel(model_name)
+            # Ping de prueba para confirmar que está vivo
+            model.generate_content("test", request_options={"timeout": 5})
+            return model, model_name
+        except:
+            continue # Si falla, pasa al siguiente
+    
+    # Fallback final (si ambos fallan)
+    return genai.GenerativeModel(priority_list[0]), f"{priority_list[0]} (Forzado)"
 
-    # Mostrar la lista al usuario para que sepa cuál elegir
-    modelo_seleccionado = st.sidebar.selectbox(
-        "Selecciona un modelo disponible:",
-        lista_modelos,
-        index=0 if lista_modelos else None
-    )
-
-    if modelo_seleccionado:
-        model = genai.GenerativeModel(modelo_seleccionado)
-        st.sidebar.success(f"✅ Conectado a: {modelo_seleccionado}")
-    else:
-        st.sidebar.error("⚠️ No se encontraron modelos compatibles.")
-
-except Exception as e:
-    st.sidebar.error(f"Error al listar modelos: {e}")
-    # Fallback de emergencia
-    model = genai.GenerativeModel("models/gemini-1.5-flash")
+# --- INICIALIZACIÓN ---
+model, nombre_activo = get_user_verified_model()
+st.sidebar.success(f"🏆 Motor: {nombre_activo}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
@@ -444,10 +446,10 @@ def procesar_guia_ia(pdf_bytes):
     Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada, Dirección de Partida, N° Guía y la Tabla de Pesos.
     REGLAS ESTRICTAS:
     - N° Guía: Extraer Serie-Numero completo.
-    - Placa: Extraer placa del vehículo y carreta si existe.
+    - Placa: IMPORTANTE: Busca la PLACA del vehículo exhaustivamente en todo el encabezado. Es un dato obligatorio.
     - Tabla: Extraer items con descripción completa.
-    - PESOS (ANTI-ALUCINACIÓN): Si la unidad es 'UNID', 'UND', 'UNIDADES' y la guía NO tiene un peso explícito para ese ítem, DEVUELVE 0.00. NO CALCULES NI ESTIMES PESOS.
-    - Para la Dirección de Partida, extrae la dirección principal (ej: Panamericana Sur Km 138.5). Luego, busca en OBSERVACIONES si existe un nombre de FUNDO o PLANTA. El resultado final debe ser: [Dirección Principal] - [Nombre del Fundo/Planta]. No omitas ninguna de las dos partes.
+    - PESOS (ANTI-ALUCINACIÓN): Si el peso no está explícito en números, pon 0.00. NO CALCULES NI ESTIMES PESOS.
+    - Para la Dirección de Partida: Extrae la Dirección Principal. LUEGO, revisa el campo OBSERVACIONES. Si encuentras un nombre de Fundo, Planta o Predio, agrégalo al final separado por un guion. Formato: [Dirección] - [Fundo/Planta]. Ejemplo: Panamericana Km 140 - Fundo Santa Rosa.
     
     JSON Esperado:
     {
@@ -462,7 +464,7 @@ def procesar_guia_ia(pdf_bytes):
                 "desc": "Descripción del bien", 
                 "cant": "Número", 
                 "um": "Unidad (KG, UNID, GLN)", 
-                "peso": "Peso (0.00 si es UNID y no explícito)"
+                "peso": "Peso (0.00 si no explícito)"
             }
         ]
     }
