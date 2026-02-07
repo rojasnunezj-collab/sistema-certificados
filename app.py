@@ -63,35 +63,46 @@ if not API_KEY:
     st.stop()
 
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+def get_best_model_dynamic():
+    """Elige el mejor modelo basado en cuota (Flash) y estabilidad (1.5)."""
+    try:
+        genai.configure(api_key=API_KEY)
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        scored_models = []
+
+        for m in all_models:
+            score = 0
+            # CRITERIOS DE PUNTUACIÓN
+            if "flash" in m: score += 100        # Prioridad 1: Velocidad y Cuota Alta
+            if "1.5" in m: score += 50           # Prioridad 2: Versión Estable
+            if "pro" in m: score += 10           # Prioridad 3: Capacidad (pero más lento)
+            if "experimental" in m or "preview" in m or "robotics" in m: 
+                score -= 1000                    # PENALIZACIÓN: Evitar modelos con cuota de 20/día
+
+            scored_models.append((score, m))
+
+        # Ordenar por puntaje descendente
+        scored_models.sort(key=lambda x: x[0], reverse=True)
+
+        if scored_models:
+            return scored_models[0][1] # Retorna el nombre del ganador
+        return "models/gemini-1.5-flash" # Fallback seguro
+
+    except Exception as e:
+        return "models/gemini-1.5-flash" # Fallback en caso de error de red
+
 try:
-    genai.configure(api_key=API_KEY)
+    # 1. Obtener el mejor modelo dinámicamente
+    nombre_modelo = get_best_model_dynamic()
     
-    # 1. Buscar TODOS los modelos disponibles en tu cuenta/región
-    # Obtenemos solo los modelos que permiten generar contenido
-    modelos_en_api = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-
-    # 2. Definir una lista de favoritos por estabilidad y cuota
-    favoritos = ["gemini-1.5-flash", "models/gemini-1.5-flash"]
+    # 2. Inicializar el motor
+    model = genai.GenerativeModel(nombre_modelo)
     
-    # 3. Bucle de búsqueda: Elegir el primer favorito que esté en la lista de la API
-    nombre_modelo = None 
-    for fav in favoritos: 
-        if fav in modelos_en_api: 
-            nombre_modelo = fav 
-            break
-
-    # 4. Respaldo total: Si ninguno de los favoritos existe, usar el primero disponible
-    if not nombre_modelo and modelos_en_api: 
-        nombre_modelo = modelos_en_api[0]
-
-    if nombre_modelo:
-        model = genai.GenerativeModel(nombre_modelo) 
-        st.sidebar.success(f"✅ Motor Activo: {nombre_modelo}")
-    else:
-        st.error("❌ Error: No se encontraron modelos disponibles en tu cuenta.")
+    # 3. Mostrar en sidebar (SOLO UNA VEZ)
+    st.sidebar.success(f"🚀 Motor Dinámico: {nombre_modelo}")
 
 except Exception as e: 
-    st.error(f"Error crítico al listar modelos: {e}")
+    st.error(f"Error crítico al iniciar modelo: {e}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
