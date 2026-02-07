@@ -64,32 +64,47 @@ if not API_KEY:
 
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 def get_best_model_dynamic():
-    """Elige el mejor modelo basado en cuota (Flash) y estabilidad (1.5)."""
+    """Algoritmo de selección con penalización severa al modelo 2.5"""
     try:
         genai.configure(api_key=API_KEY)
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         scored_models = []
 
-        for m in all_models:
+        for m_name in all_models:
             score = 0
-            # CRITERIOS DE PUNTUACIÓN
-            if "flash" in m: score += 100        # Prioridad 1: Velocidad y Cuota Alta
-            if "1.5" in m: score += 50           # Prioridad 2: Versión Estable
-            if "pro" in m: score += 10           # Prioridad 3: Capacidad (pero más lento)
-            if "experimental" in m or "preview" in m or "robotics" in m: 
-                score -= 1000                    # PENALIZACIÓN: Evitar modelos con cuota de 20/día
-
-            scored_models.append((score, m))
-
-        # Ordenar por puntaje descendente
+            name_lower = m_name.lower()
+            
+            # --- BONIFICACIONES (LO QUE QUEREMOS) ---
+            if "gemini-1.5-flash" in name_lower:
+                score += 10000  # Prioridad absoluta (1500 req/día)
+            elif "1.5" in name_lower and "flash" in name_lower:
+                score += 5000
+            elif "pro" in name_lower:
+                score += 1000
+                
+            # --- PENALIZACIONES (LO QUE BLOQUEA - ERROR 429) ---
+            # El 2.5 tiene límite de 20 peticiones. ¡PROHIBIDO!
+            if "2.5" in name_lower:
+                score -= 1000000 
+            if "experimental" in name_lower or "preview" in name_lower or "robotics" in name_lower:
+                score -= 1000000
+                
+            scored_models.append((score, m_name))
+        
+        # Ordenar: El puntaje más alto gana
         scored_models.sort(key=lambda x: x[0], reverse=True)
-
+        
         if scored_models:
-            return scored_models[0][1] # Retorna el nombre del ganador
-        return "models/gemini-1.5-flash" # Fallback seguro
-
-    except Exception as e:
-        return "models/gemini-1.5-flash" # Fallback en caso de error de red
+            winner = scored_models[0][1]
+            # Doble chequeo de seguridad
+            if "2.5" in winner: 
+                return "models/gemini-1.5-flash" # Fallback forzado si el ganador sigue siendo malo
+            return winner
+            
+        return "models/gemini-1.5-flash" # Fallback por defecto
+        
+    except Exception:
+        return "models/gemini-1.5-flash"
 
 try:
     # 1. Obtener el mejor modelo dinámicamente
