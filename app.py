@@ -441,19 +441,22 @@ def procesar_guia_ia(pdf_bytes):
     prompt = """
     Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada, Dirección de Partida, N° Guía y la Tabla de Pesos.
     REGLAS ESTRICTAS:
-    - Dirección Partida y Llegada: IMPORTANTE extraer la dirección COMPLETA. Si figura nombre de FUNDO, PLANTA, LOTE o PARCELA entre paréntesis o al final, DEBE INCLUIRSE.
     - N° Guía: Extraer Serie-Numero completo.
     - Placa: Extraer placa del vehículo y carreta si existe.
     - Tabla: Extraer items con descripción completa.
     - PESOS (ANTI-ALUCINACIÓN): Si la unidad es 'UNID', 'UND', 'UNIDADES' y la guía NO tiene un peso explícito para ese ítem, DEVUELVE 0.00. NO CALCULES NI ESTIMES PESOS.
+    - LÓGICA DE CONCATENACIÓN (Punto de Partida):
+        Paso A: Extrae la dirección principal del punto de partida.
+        Paso B: Busca en la sección de OBSERVACIONES si existe un nombre de FUNDO o PLANTA.
+        Paso C (Resultado Final): El campo 'punto_partida' debe ser la unión de ambos: "[Dirección Principal] - [Nombre del Fundo/Planta]". Si no hay Fundo o Planta, deja solo la dirección principal.
     
     JSON Esperado:
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
         "vehiculo": "PLACA", 
-        "punto_partida": "Dirección Completa (INCLUYENDO FUNDO/PLANTA)", 
-        "punto_llegada": "Dirección Completa (INCLUYENDO FUNDO/PLANTA)", 
+        "punto_partida": "Dirección Concatenada", 
+        "punto_llegada": "Dirección Completa", 
         "destinatario": "Razón Social", 
         "items": [
             {
