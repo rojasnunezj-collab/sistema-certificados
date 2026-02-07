@@ -64,12 +64,13 @@ if not API_KEY:
 
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 def get_verified_model():
-    """Busca, filtra y PRUEBA modelos hasta encontrar uno que funcione realmente."""
+    """Busca un modelo MULTIMODAL (que vea imágenes) y descarta los de solo texto."""
     genai.configure(api_key=API_KEY)
     
-    # 1. LISTA NEGRA: Lo que NO queremos bajo ningún concepto
-    BLACKLIST = ['experimental', 'preview', 'beta', 'robotics', '2.0', '2.5', '8b']
+    # 1. LISTA NEGRA: Prohibido modelos de solo texto (Gemma) o inestables
+    BLACKLIST = ['experimental', 'preview', 'beta', 'robotics', '2.0', '2.5', '8b', 'gemma']
     
     try:
         # Obtener candidatos brutos
@@ -78,14 +79,21 @@ def get_verified_model():
         # 2. Filtrado y Ordenamiento
         candidatos = []
         for m in all_models:
-            # Si tiene un término prohibido, adiós
-            if any(bad in m.lower() for bad in BLACKLIST):
+            name_lower = m.lower()
+            
+            # FILTRO 1: Si está en la lista negra, ADIÓS.
+            if any(bad in name_lower for bad in BLACKLIST):
+                continue
+                
+            # FILTRO 2: Debe ser GEMINI (Multimodal)
+            if 'gemini' not in name_lower:
                 continue
             
-            # Puntaje para ordenar (No para elegir a ciegas)
+            # PUNTAJE:
             score = 0
-            if "1.5" in m: score += 10
-            if "flash" in m: score += 5
+            if "1.5" in name_lower: score += 10
+            if "flash" in name_lower: score += 5
+            
             candidatos.append((score, m))
             
         # Ordenar por puntaje (los mejores primero)
@@ -97,7 +105,7 @@ def get_verified_model():
             try:
                 # Intentamos instanciar
                 model_test = genai.GenerativeModel(nombre_modelo)
-                # Intentamos una llamada REAL (esto detecta el 404 o 429)
+                # Probamos generando algo simple
                 response = model_test.generate_content("test", request_options={"timeout": 5})
                 if response:
                     return model_test, nombre_modelo # ¡Funciona!
