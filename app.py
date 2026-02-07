@@ -442,29 +442,26 @@ def procesar_guia_ia(pdf_bytes):
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
         "vehiculo": "PLACA", 
-        "punto_partida": "Dirección completa", 
-        "punto_llegada": "Dirección completa", 
-        "planta_fundo": "Extraer info de planta/fundo desde observaciones si existe",
+        "punto_partida": "Dirección completa (incluir Fundo/Planta si figura)", 
+        "punto_llegada": "Dirección completa (incluir Fundo/Planta si figura)", 
         "destinatario": "Razón Social", 
         "items": [
             {
                 "desc": "Descripción del bien", 
-                "cant": "Número (ej: 100)", 
-                "um": "Unidad (UND, NIU)", 
-                "peso": "Peso (ej: 500.00)"
+                "cant": "Número", 
+                "um": "Unidad", 
+                "peso": "Peso"
             }
         ]
     }
     """
     
-    # Check si modelo global existe
     if 'model' not in globals() or not model:
         st.error("Error: Modelo IA no inicializado globalmente.")
         return None
 
     try:
-        time.sleep(2) 
-        # model ya esta instanciado arriba
+        time.sleep(1) 
         res = model.generate_content([prompt, {"mime_type": "application/pdf", "data": base64.b64encode(pdf_bytes).decode('utf-8')}])
         
         texto_limpio = res.text.replace("```json", "").replace("```", "")
@@ -481,8 +478,6 @@ def procesar_guia_ia(pdf_bytes):
 # ==========================================
 # 6. INTERFAZ STREAMLIT
 # ==========================================
-if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
-if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'ocr_data' not in st.session_state: st.session_state['ocr_data'] = None
 if 'df_items' not in st.session_state: st.session_state['df_items'] = pd.DataFrame()
 if 'datos_log_pendientes' not in st.session_state: st.session_state['datos_log_pendientes'] = {}
@@ -514,11 +509,9 @@ if archivos:
         total = len(archivos)
         
         for i, arc in enumerate(archivos):
-            if i > 0: time.sleep(3) # Pausa
-            
             d = procesar_guia_ia(arc.read())
             if d:
-                if not grl: grl = d
+                if not grl: grl = d 
                 s, f, p = formatear_guia(d.get('serie','S/N')), d.get('fecha',''), d.get('vehiculo','')
                 for it in d.get('items', []):
                     it.update({'guia_origen': s, 'fecha_origen': f, 'placa_origen': p})
@@ -528,17 +521,14 @@ if archivos:
         
         time.sleep(0.5); prog.empty()
         
-        if grl and items:
-            st.session_state['ocr_data'] = grl
+        if items:
+            st.session_state['ocr_data'] = grl if grl else {}
             df = pd.DataFrame(items)
             for c in ['desc','cant','um','peso','fecha_origen','guia_origen','placa_origen']:
                 if c not in df.columns: df[c] = ""
             
-            # Formato Inteligente Inicial (Para que la UI se vea consistente)
             df['peso'] = df['peso'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
             df['cant'] = df['cant'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
-            
-            # APLICANDO REGLAS DE FORMATO: Descripcion Mayusculas y UM Mapping
             df['desc'] = df['desc'].astype(str).str.upper()
             df['um'] = df['um'].apply(lambda x: 'KG' if 'KILO' in str(x).upper() else 'GLN' if 'GALO' in str(x).upper() else str(x).upper())
             
@@ -546,37 +536,32 @@ if archivos:
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
             
             st.session_state['df_items'] = df
-            st.success(f"✅ Procesado: {total-errores} correctos.")
-        else: st.error("❌ Falló el proceso. Revisa los mensajes de error.")
+            st.success(f"✅ Procesado: {len(items)} items de {total} archivos.")
+        else: st.error("❌ Falló: No se encontraron items.")
 
-if st.session_state['ocr_data']:
+if st.session_state['ocr_data'] is not None:
     ocr = st.session_state['ocr_data']
     st.markdown("### Validación")
     
-    # CSS para Correlativo Amarillo (Soporte para stNumberInput y stTextInput)
-    st.markdown('''
-            <style>
-            /* Solo afecta al contenedor que tiene el label 'Correlativo' */
-            div[data-testid="stNumberInput"]:has(label:contains("Correlativo")) input,
-            div[data-testid="stTextInput"]:has(label:contains("Correlativo")) input {
-                background-color: #FFFF00 !important;
-                color: black !important;
-            }
-            </style>
-        ''', unsafe_allow_html=True)
+    st.markdown('<style>div[data-testid="stNumberInput"] label {background-color: yellow; color: black; padding: 2px; border-radius: 3px;}</style>', unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
     fecha_base = normalizar_fecha(ocr.get('fecha'))
     cont_f = c2.container()
     
-    opt_f = c2.radio("Regla Fecha:", ["Comercialización (+2)", "Disposición Final (Fin de Mes)"], label_visibility="collapsed")
+    # NUEVAS OPCIONES DE RADIO
+    opt_f = c2.radio("Regla Fecha:", ["COMERCIALIZACION (FIN DE MES)", "DISPOSICION FINAL +2"], label_visibility="collapsed")
+    
     try:
-        if "Comercialización" in opt_f: 
-            f_calc = (datetime.strptime(fecha_base, "%d/%m/%Y")+timedelta(days=2)).strftime("%d/%m/%Y")
+        # Lógica Invertida segun nombres nuevos solicitados? 
+        # "Fin de Mes" asociamos a logic obtener_fin_de_mes
+        # "+2" asociamos a +2 days
+        if "FIN DE MES" in opt_f: 
+            f_calc = obtener_fin_de_mes(fecha_base)
             tipo_operacion_simple = "Comercialización"
         else: 
-            f_calc = obtener_fin_de_mes(fecha_base)
+            f_calc = (datetime.strptime(fecha_base, "%d/%m/%Y")+timedelta(days=2)).strftime("%d/%m/%Y")
             tipo_operacion_simple = "Disposición Final"
     except: 
         f_calc = fecha_base
@@ -584,21 +569,24 @@ if st.session_state['ocr_data']:
 
     v_fec_emis = cont_f.text_input("F. Emisión", value=f_calc)
 
-    if len(archivos) > 1:
-        v_guia, v_placa = c3.text_input("Guía", "VARIAS"), c4.text_input("Placa", "VARIAS")
-    else:
-        v_guia, v_placa = c3.text_input("Guía", formatear_guia(ocr.get('serie'))), c4.text_input("Placa", ocr.get('vehiculo'))
+    # Mostrar info del primer archivo como referencia
+    v_guia_ref = formatear_guia(ocr.get('serie')) if len(archivos) == 1 else "VARIAS"
+    v_placa_ref = ocr.get('vehiculo') if len(archivos) == 1 else "VARIAS"
+    
+    c3.text_input("Guía", v_guia_ref, disabled=True)
+    c4.text_input("Placa", v_placa_ref, disabled=True)
 
-    v_partida = st.text_input("Partida", formato_nompropio(ocr.get('punto_partida','')), key="txt_partida")
-    
-    # Construcción de Llegada con Planta/Fundo
+    # Sync Partida
+    partida_base = formato_nompropio(ocr.get('punto_partida',''))
+    # Si desea fundo en partida, el prompt deberia traerlo en punto_partida
+    if "v_partida" not in st.session_state: st.session_state["v_partida"] = partida_base
+    v_partida = st.text_input("Partida", key="v_partida")
+
+    # Sync Llegada
     llegada_base = formato_nompropio(ocr.get('punto_llegada',''))
-    pf_extra = formato_nompropio(ocr.get('planta_fundo',''))
-    val_llegada = f"{llegada_base} - {pf_extra}" if pf_extra and pf_extra not in llegada_base else llegada_base
-    
-    # FIX: Sync directo con session_state para Word
-    if "v_llegada" not in st.session_state: st.session_state["v_llegada"] = val_llegada
-    v_llegada = st.text_input("Llegada", key="v_llegada") # Se vincula solo a v_llegada
+    # Ya no usamos planta_fundo separado porque el prompt lo integra si es posible
+    if "v_llegada" not in st.session_state: st.session_state["v_llegada"] = llegada_base
+    v_llegada = st.text_input("Llegada", key="v_llegada")
     
     v_dest = st.text_input("Destinatario", ocr.get('destinatario',''), key="txt_destinatario")
 
@@ -635,7 +623,7 @@ if st.session_state['ocr_data']:
     tab1, tab2 = st.tabs(["Generar", "Registrar"])
 
     with tab1:
-        if st.button("COMERCIALIZACION (FIN DE MES) DISPOSICION FINAL +2", type="primary"):
+        if st.button("GENERAR CERTIFICADO", type="primary"):
             drive, _ = obtener_servicios()
             if drive:
                 try:
@@ -654,10 +642,10 @@ if st.session_state['ocr_data']:
                         "EMPRESA": v_emi, "RUC_EMPRESA": v_ruc_e, "RUC": v_ruc_e, 
                         "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                         "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
-                        "PUNTO_PARTIDA": st.session_state["txt_partida"], 
-                        "DIRECCION_EMPRESA": st.session_state["v_llegada"], # Changed key usage
-                        "DIRECCION_LLEGADA": st.session_state["v_llegada"], # Changed key usage
-                        "LLEGADA": st.session_state["v_llegada"], # Changed key usage
+                        "PUNTO_PARTIDA": st.session_state["v_partida"], 
+                        "DIRECCION_EMPRESA": st.session_state["v_llegada"], 
+                        "DIRECCION_LLEGADA": st.session_state["v_llegada"], 
+                        "LLEGADA": st.session_state["v_llegada"],
                         "EMPRESA_2": dest_final, "FECHA_EMISION": v_fec_emis,
                         "DESTINATARIO_FINAL": st.session_state["txt_destinatario"]
                     }
