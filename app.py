@@ -66,72 +66,55 @@ if not API_KEY:
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
-def get_verified_model():
-    """ 
-    1. Busca dinámicamente modelos Gemini válidos.
-    2. Si falla, activa el PROTOCOLO DE FUERZA BRUTA probando variantes de nombres manuales.
-    """
-    BLACKLIST = ['experimental', 'preview', 'beta', 'robotics', '2.0', '2.5', '8b', 'gemma']
-    
-    # --- FASE 1: Búsqueda Dinámica en la Cuenta ---
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+def get_and_show_models():
+    """Intenta conectar y, si falla, muestra el menú disponible al usuario."""
     try:
+        # 1. Obtener lista cruda
         genai.configure(api_key=API_KEY)
-        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        all_models = list(genai.list_models())
+        nombres_disponibles = [m.name for m in all_models]
+        
+        # 2. Filtrar solo los que ven imágenes (Gemini) y no son experimentales
+        # Prioridad: 1.5 Flash > 1.5 Pro > 1.0 Pro
         candidatos = []
         for m in all_models:
-            name_lower = m.lower()
-            if any(bad in name_lower for bad in BLACKLIST): continue # Filtro de Basura
-            if 'gemini' not in name_lower: continue                  # Solo Gemini (Multimodal)
-            
-            score = 0
-            if "1.5" in name_lower: score += 10
-            if "flash" in name_lower: score += 5
-            candidatos.append((score, m))
+            if 'vision' in m.supported_generation_methods or 'generateContent' in m.supported_generation_methods:
+                if 'gemma' in m.name: continue # Ignorar Gemma (no ve imágenes)
+                candidatos.append(m.name)
         
-        candidatos.sort(key=lambda x: x[0], reverse=True)
+        # 3. Mostrar lista en sidebar para depuración (SOLO SI EL USUARIO LO NECESITA)
+        st.sidebar.expander("🔍 Modelos Detectados (Debug)").write(candidatos)
         
-        # Prueba de Fuego Dinámica
-        for _, name in candidatos:
-            try:
-                model = genai.GenerativeModel(name)
-                model.generate_content("test", request_options={"timeout": 5})
-                return model, name # ¡Éxito Dinámico!
-            except: continue
-            
-    except Exception:
-        pass # Si falla listar modelos, vamos a la Fase 2 directo
+        # 4. Intentar conectar al mejor candidato
+        # Orden de preferencia manual
+        preferidos = [
+            "models/gemini-1.5-flash", 
+            "models/gemini-1.5-flash-latest",
+            "models/gemini-1.5-pro",
+            "models/gemini-pro-vision" # El antiguo confiable
+        ]
+        
+        for p in preferidos:
+            if p in candidatos:
+                return genai.GenerativeModel(p), p
+        
+        # Si no encuentra ninguno de los preferidos, toma el primero disponible que sea Gemini
+        for c in candidatos:
+            if 'gemini' in c:
+                return genai.GenerativeModel(c), c
+                
+        return None, "Ningún modelo compatible encontrado"
+        
+    except Exception as e:
+        return None, f"Error Fatal: {str(e)}"
 
-    # --- FASE 2: PROTOCOLO DE RESCATE (Fuerza Bruta) ---
-    # Probamos variantes específicas de nombres que suelen funcionar
-    hardcoded_candidates = [
-        "gemini-1.5-flash",             # Nombre corto
-        "models/gemini-1.5-flash",      # Nombre con prefijo
-        "gemini-1.5-flash-latest",      # Versión latest
-        "models/gemini-1.5-flash-latest",
-        "gemini-1.5-flash-001",         # Versión específica 001
-        "models/gemini-1.5-flash-001",
-        "gemini-1.5-pro",               # Respaldo Pro
-        "models/gemini-1.5-pro",
-        "gemini-pro",                   # El clásico
-        "models/gemini-pro"
-    ]
-    
-    errores = []
-    for nombre in hardcoded_candidates:
-        try:
-            model = genai.GenerativeModel(nombre)
-            # ¡LA PRUEBA REAL! Si esto pasa, el modelo existe y funciona.
-            model.generate_content("test", request_options={"timeout": 5})
-            return model, f"{nombre} (Rescate)"
-        except Exception as e:
-            errores.append(f"{nombre}: {str(e)}")
-            continue
-
-    # Si llegamos aquí, nada funcionó. Devolvemos error visible.
-    return genai.GenerativeModel("gemini-1.5-flash"), f"⚠️ ERROR CRÍTICO: Ningún modelo respondió. Detalles: {errores[0] if errores else 'Sin conexión'}"
-
-model, nombre_activo = get_verified_model()
-st.sidebar.success(f"🟢 Motor Verificado: {nombre_activo}")
+# --- USO ---
+model, nombre_modelo = get_and_show_models()
+if model:
+    st.sidebar.success(f"✅ Conectado a: {nombre_modelo}")
+else:
+    st.error(f"❌ Error de conexión: {nombre_modelo}")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
