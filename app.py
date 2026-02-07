@@ -437,19 +437,26 @@ def procesar_guia_ia(pdf_bytes):
     # No re-configuramos aquí para ganar velocidad y usar la conexión global
     
     prompt = """
-    Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada (priorizando nombres de Fundos o Plantas entre paréntesis) y la Tabla de Pesos. No omitas ningún campo anterior.
+    Extrae en formato JSON: Correlativo, Fecha, RUC Remitente, RUC Destinatario, Placa, Chofer, Dirección de Llegada, Dirección de Partida, N° Guía y la Tabla de Pesos.
+    REGLAS ESTRICTAS:
+    - Dirección Partida y Llegada: Si hay referencia a (FUNDO / PLANTA / PARCELA), DEBE incluirse en el texto extraído.
+    - N° Guía: Extraer Serie-Numero completo.
+    - Placa: Extraer placa del vehículo y carreta si existe.
+    - Tabla: Extraer items con descripción completa.
+    
+    JSON Esperado:
     {
         "fecha": "dd/mm/yyyy", 
         "serie": "T001-000000", 
         "vehiculo": "PLACA", 
-        "punto_partida": "Dirección completa (incluir Fundo/Planta si figura)", 
-        "punto_llegada": "Dirección completa (incluir Fundo/Planta si figura)", 
+        "punto_partida": "Dirección Completa (CON FUNDO/PLANTA)", 
+        "punto_llegada": "Dirección Completa (CON FUNDO/PLANTA)", 
         "destinatario": "Razón Social", 
         "items": [
             {
                 "desc": "Descripción del bien", 
                 "cant": "Número", 
-                "um": "Unidad", 
+                "um": "Unidad (KG, UNID, GLN)", 
                 "peso": "Peso"
             }
         ]
@@ -514,6 +521,7 @@ if archivos:
                 if not grl: grl = d 
                 s, f, p = formatear_guia(d.get('serie','S/N')), d.get('fecha',''), d.get('vehiculo','')
                 for it in d.get('items', []):
+                    # Acumulando items de TODAS las guias
                     it.update({'guia_origen': s, 'fecha_origen': f, 'placa_origen': p})
                     items.append(it)
             else: errores += 1
@@ -530,7 +538,9 @@ if archivos:
             df['peso'] = df['peso'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
             df['cant'] = df['cant'].apply(lambda x: formato_inteligente(limpiar_monto(x)))
             df['desc'] = df['desc'].astype(str).str.upper()
-            df['um'] = df['um'].apply(lambda x: 'KG' if 'KILO' in str(x).upper() else 'GLN' if 'GALO' in str(x).upper() else str(x).upper())
+            
+            # REGLAS DE FORMATO: KG, GLN, UNID
+            df['um'] = df['um'].apply(lambda x: 'KG' if 'KILO' in str(x).upper() else 'GLN' if 'GALO' in str(x).upper() else 'UNID' if 'UNIDA' in str(x).upper() else str(x).upper())
             
             df['desc'] = df['desc'].apply(limpiar_descripcion)
             df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
@@ -543,20 +553,24 @@ if st.session_state['ocr_data'] is not None:
     ocr = st.session_state['ocr_data']
     st.markdown("### Validación")
     
-    st.markdown('<style>div[data-testid="stNumberInput"] label {background-color: yellow; color: black; padding: 2px; border-radius: 3px;}</style>', unsafe_allow_html=True)
+    # CSS Correlativo: Solo al INPUT
+    st.markdown('''
+            <style>
+            div[data-testid="stTextInput"]:has(label:contains("Correlativo")) input {
+                background-color: #FFFF00 !important;
+                color: black !important;
+            }
+            </style>
+        ''', unsafe_allow_html=True)
 
     c1, c2, c3, c4 = st.columns(4)
     v_corr = c1.text_input("Correlativo", "001")
     fecha_base = normalizar_fecha(ocr.get('fecha'))
     cont_f = c2.container()
     
-    # NUEVAS OPCIONES DE RADIO
     opt_f = c2.radio("Regla Fecha:", ["COMERCIALIZACION (FIN DE MES)", "DISPOSICION FINAL +2"], label_visibility="collapsed")
     
     try:
-        # Lógica Invertida segun nombres nuevos solicitados? 
-        # "Fin de Mes" asociamos a logic obtener_fin_de_mes
-        # "+2" asociamos a +2 days
         if "FIN DE MES" in opt_f: 
             f_calc = obtener_fin_de_mes(fecha_base)
             tipo_operacion_simple = "Comercialización"
@@ -573,18 +587,17 @@ if st.session_state['ocr_data'] is not None:
     v_guia_ref = formatear_guia(ocr.get('serie')) if len(archivos) == 1 else "VARIAS"
     v_placa_ref = ocr.get('vehiculo') if len(archivos) == 1 else "VARIAS"
     
-    c3.text_input("Guía", v_guia_ref, disabled=True)
-    c4.text_input("Placa", v_placa_ref, disabled=True)
+    # FIX: Definir variables v_guia y v_placa para uso posterior
+    v_guia = c3.text_input("Guía", v_guia_ref, disabled=True)
+    v_placa = c4.text_input("Placa", v_placa_ref, disabled=True)
 
     # Sync Partida
     partida_base = formato_nompropio(ocr.get('punto_partida',''))
-    # Si desea fundo en partida, el prompt deberia traerlo en punto_partida
     if "v_partida" not in st.session_state: st.session_state["v_partida"] = partida_base
     v_partida = st.text_input("Partida", key="v_partida")
 
     # Sync Llegada
     llegada_base = formato_nompropio(ocr.get('punto_llegada',''))
-    # Ya no usamos planta_fundo separado porque el prompt lo integra si es posible
     if "v_llegada" not in st.session_state: st.session_state["v_llegada"] = llegada_base
     v_llegada = st.text_input("Llegada", key="v_llegada")
     
