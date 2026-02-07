@@ -71,7 +71,7 @@ try:
     modelos_en_api = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
 
     # 2. Definir una lista de favoritos por estabilidad y cuota
-    favoritos = ["models/gemini-1.5-flash", "models/gemini-1.5-flash-latest", "models/gemini-pro", "models/gemini-1.0-pro"]
+    favoritos = ["gemini-1.5-flash", "models/gemini-1.5-flash"]
     
     # 3. Bucle de búsqueda: Elegir el primer favorito que esté en la lista de la API
     nombre_modelo = None 
@@ -445,10 +445,7 @@ def procesar_guia_ia(pdf_bytes):
     - Placa: Extraer placa del vehículo y carreta si existe.
     - Tabla: Extraer items con descripción completa.
     - PESOS (ANTI-ALUCINACIÓN): Si la unidad es 'UNID', 'UND', 'UNIDADES' y la guía NO tiene un peso explícito para ese ítem, DEVUELVE 0.00. NO CALCULES NI ESTIMES PESOS.
-    - LÓGICA DE CONCATENACIÓN (Punto de Partida):
-        Paso A: Extrae la dirección principal del punto de partida.
-        Paso B: Busca en la sección de OBSERVACIONES si existe un nombre de FUNDO o PLANTA.
-        Paso C (Resultado Final): El campo 'punto_partida' debe ser la unión de ambos: "[Dirección Principal] - [Nombre del Fundo/Planta]". Si no hay Fundo o Planta, deja solo la dirección principal.
+    - Para la Dirección de Partida, extrae la dirección principal (ej: Panamericana Sur Km 138.5). Luego, busca en OBSERVACIONES si existe un nombre de FUNDO o PLANTA. El resultado final debe ser: [Dirección Principal] - [Nombre del Fundo/Planta]. No omitas ninguna de las dos partes.
     
     JSON Esperado:
     {
