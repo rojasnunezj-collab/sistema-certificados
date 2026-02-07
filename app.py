@@ -65,24 +65,14 @@ if not API_KEY:
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 try:
     genai.configure(api_key=API_KEY)
-    # 1. Obtener modelos
-    todos = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    
-    # 2. FILTRO DE SEGURIDAD: Eliminar gemini-2.5 (Causa del 429)
-    # Solo permitimos versiones 1.5 o 1.0
-    seguros = [m for m in todos if "2.5" not in m and ("1.5" in m or "1.0" in m)]
-    
-    # 3. Prioridad estricta para 1.5-flash
-    # Buscamos variantes exactas
-    candidatos = ["models/gemini-1.5-flash", "gemini-1.5-flash", "models/gemini-1.5-flash-latest"]
-    nombre_final = next((c for c in candidatos if c in seguros), None)
-    
-    # Fallback: El primer modelo seguro disponible
-    if not nombre_final:
-        nombre_final = seguros[0] if seguros else "models/gemini-1.5-flash"
-
-    model = genai.GenerativeModel(nombre_final)
-    st.sidebar.success(f"✅ Motor Activo: {nombre_final}")
+    # Forzar únicamente gemini-1.5-flash para asegurar cuota de 1,500/día
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        st.sidebar.success("✅ Motor: Gemini 1.5 Flash (Activo)")
+    except Exception as e:
+        # Respaldo solo si el anterior falla por nombre técnico
+        model = genai.GenerativeModel('models/gemini-1.5-flash')
+        st.sidebar.success("✅ Motor: Gemini 1.5 Flash (Respaldo)")
 except Exception as e:
     st.error(f"Error al iniciar IA: {e}")
 
