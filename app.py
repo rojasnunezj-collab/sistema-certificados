@@ -67,54 +67,33 @@ if not API_KEY:
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
 # --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
-def get_and_show_models():
-    """Intenta conectar y, si falla, muestra el menú disponible al usuario."""
-    try:
-        # 1. Obtener lista cruda
-        genai.configure(api_key=API_KEY)
-        all_models = list(genai.list_models())
-        nombres_disponibles = [m.name for m in all_models]
-        
-        # 2. Filtrar solo los que ven imágenes (Gemini) y no son experimentales
-        # Prioridad: 1.5 Flash > 1.5 Pro > 1.0 Pro
-        candidatos = []
-        for m in all_models:
-            if 'vision' in m.supported_generation_methods or 'generateContent' in m.supported_generation_methods:
-                if 'gemma' in m.name: continue # Ignorar Gemma (no ve imágenes)
-                candidatos.append(m.name)
-        
-        # 3. Mostrar lista en sidebar para depuración (SOLO SI EL USUARIO LO NECESITA)
-        st.sidebar.expander("🔍 Modelos Detectados (Debug)").write(candidatos)
-        
-        # 4. Intentar conectar al mejor candidato
-        # Orden de preferencia manual
-        preferidos = [
-            "models/gemini-1.5-flash", 
-            "models/gemini-1.5-flash-latest",
-            "models/gemini-1.5-pro",
-            "models/gemini-pro-vision" # El antiguo confiable
-        ]
-        
-        for p in preferidos:
-            if p in candidatos:
-                return genai.GenerativeModel(p), p
-        
-        # Si no encuentra ninguno de los preferidos, toma el primero disponible que sea Gemini
-        for c in candidatos:
-            if 'gemini' in c:
-                return genai.GenerativeModel(c), c
-                
-        return None, "Ningún modelo compatible encontrado"
-        
-    except Exception as e:
-        return None, f"Error Fatal: {str(e)}"
+# --- MODELO DINÁMICO GLOBAL (Solución 404 y 429) ---
+st.sidebar.title("🔧 Diagnóstico de Modelos")
+try:
+    genai.configure(api_key=API_KEY)
+    # Listar todos los modelos disponibles para tu API Key
+    lista_modelos = []
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            lista_modelos.append(m.name)
 
-# --- USO ---
-model, nombre_modelo = get_and_show_models()
-if model:
-    st.sidebar.success(f"✅ Conectado a: {nombre_modelo}")
-else:
-    st.error(f"❌ Error de conexión: {nombre_modelo}")
+    # Mostrar la lista al usuario para que sepa cuál elegir
+    modelo_seleccionado = st.sidebar.selectbox(
+        "Selecciona un modelo disponible:",
+        lista_modelos,
+        index=0 if lista_modelos else None
+    )
+
+    if modelo_seleccionado:
+        model = genai.GenerativeModel(modelo_seleccionado)
+        st.sidebar.success(f"✅ Conectado a: {modelo_seleccionado}")
+    else:
+        st.sidebar.error("⚠️ No se encontraron modelos compatibles.")
+
+except Exception as e:
+    st.sidebar.error(f"Error al listar modelos: {e}")
+    # Fallback de emergencia
+    model = genai.GenerativeModel("models/gemini-1.5-flash")
 
 # IDs Google
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
