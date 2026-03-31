@@ -6,8 +6,4 @@ google-auth-httplib2
 google-auth-oauthlib
 google-cloud-aiplatform
 docxtpl
-<<<<<<< HEAD
 python-docx
-=======
-python-docx
->>>>>>> 16e63dda413d9bd7330c3dcb054d027e6eb076b4
