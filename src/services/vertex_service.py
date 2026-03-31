@@ -18,16 +18,32 @@ def procesar_guia_ia_vertex(pdf_bytes):
     PROJECT_ID = "sistemacertificados-485822"
     
     # ====================================================================
-    # --- BLOQUE 2: Carga de Credenciales de Google Cloud ---
+    # --- BLOQUE 2: Carga de Credenciales Inteligente (Nube o Local) ---
     # ====================================================================
-    # 1. Ubicar Credenciales (Nombre exacto detectado: secretoslocal.json)
-    cred_path = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
+    creds = None
     
+    # 1. Intentar cargar desde los Secrets de Streamlit (Nube)
+    if "google" in st.secrets:
+        try:
+            creds_info = dict(st.secrets["google"])
+            creds = service_account.Credentials.from_service_account_info(creds_info)
+        except Exception as e:
+            st.error(f"Error cargando credenciales desde st.secrets: {e}")
+
+    # 2. Si no hay secrets, intentar cargar desde archivo local (PC)
+    if not creds:
+        cred_path = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
+        if cred_path:
+            try:
+                creds = service_account.Credentials.from_service_account_file(cred_path)
+            except Exception as e:
+                st.error(f"Error cargando archivo {cred_path}: {e}")
+
+    # 3. Inicializar Vertex AI con las credenciales obtenidas
     try:
-        creds = service_account.Credentials.from_service_account_file(cred_path) if cred_path else None
+        vertexai.init(project=PROJECT_ID, location="us-central1", credentials=creds)
     except Exception as e:
-        st.error(f"Error cargando archivo {cred_path}: {e}")
-        creds = None
+        st.error(f"Error inicializando Vertex AI: {e}")
 
     # ====================================================================
     # --- BLOQUE 3: Configuración de Regiones y Modelos (Fallbacks) ---
