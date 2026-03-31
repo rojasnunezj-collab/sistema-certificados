@@ -553,14 +553,13 @@ if st.session_state.get('generado'):
             
             servicio_drive, _ = obtener_servicios()
             
-            # 1. Ejecutar el enrutador hacia Drive
+          # 1. Ejecutar el enrutador hacia Drive
 if es_modelo:
     from src.services.google_service import subir_modelo_a_drive
     link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
 else:
-    # --- NUEVO: Buscamos la carpeta exacta ---
-    # Asegúrate de que v_empresa y v_tipo sean los nombres de tus variables (ej: "EPMI S.A.C." y "Comercialización")
-    carpeta_exacta = CARPETAS_DESTINO[v_empresa][v_tipo] 
+    # --- AHORA SÍ: Usamos tus variables reales ---
+    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
     
     # Le enviamos esa carpeta exacta a la función
     link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
