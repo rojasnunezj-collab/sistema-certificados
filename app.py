@@ -566,43 +566,43 @@ else:
     link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
             
             # 2. Armar la fila de datos para Sheets
-            link_final = link_drive if link_drive else "Error de Permisos en Drive"
+    link_final = link_drive if link_drive else "Error de Permisos en Drive"
             
             # --- LÓGICA DE EXTRACCIÓN PARA SHEETS (REPLICADA) ---
-            partes_partida = str(v_partida).split(' - ')
-            nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
-            import re; nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
+    partes_partida = str(v_partida).split(' - ')
+    nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
+    import re; nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
             
-            from datetime import datetime
-            val_empresa = str(v_cli).strip().upper()
-            val_fundo = str(nombre_limpio).strip().upper()
+    from datetime import datetime
+    val_empresa = str(v_cli).strip().upper()
+    val_fundo = str(nombre_limpio).strip().upper()
             
-            if es_modelo:
-                val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
-            elif "Comercialización" in tipo_flujo:
-                val_cert = "COMERCIALIZACIÓN"
-            elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
-                val_cert = "FINAL"
-            else:
-                val_cert = "SERVICIOS"
+    if es_modelo:
+        val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
+    elif "Comercialización" in tipo_flujo:
+        val_cert = "COMERCIALIZACIÓN"
+    elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
+        val_cert = "FINAL"
+    else:
+        val_cert = "SERVICIOS"
             
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
-            if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
-                guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
-                val_guia_completa = ", ".join(guias_lista)
-            else:
-                val_guia_completa = str(v_guia).strip().upper()
+    if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
+        guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+        val_guia_completa = ", ".join(guias_lista)
+    else:
+        val_guia_completa = str(v_guia).strip().upper()
 
             # --- 2. Fecha y armado de datos para Sheets ---
-            fecha_registro = datetime.now().strftime("%d/%m/%Y")
-            datos_log = [fecha_registro, val_empresa, val_fundo, v_corr, val_cert, val_guia_completa, "", link_final, "", ""]
+    fecha_registro = datetime.now().strftime("%d/%m/%Y")
+    datos_log = [fecha_registro, val_empresa, val_fundo, v_corr, val_cert, val_guia_completa, "", link_final, "", ""]
             
-            if registrar_en_control(datos_log):
-                if link_drive:
-                    st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
-                    st.markdown(f"[🔗 Clic aquí para ver el documento en Drive]({link_drive})")
-                    st.cache_data.clear() 
-                else:
-                    st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
-            else:
-                st.error("❌ Falló la conexión con Sheets.")
+    if registrar_en_control(datos_log):
+        if link_drive:
+            st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
+            st.markdown(f"[🔗 Clic aquí para ver el documento en Drive]({link_drive})")
+            st.cache_data.clear() 
+        else:
+            st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
+    else:
+        st.error("❌ Falló la conexión con Sheets.")
