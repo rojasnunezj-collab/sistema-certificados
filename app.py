@@ -556,30 +556,31 @@ if st.session_state.get('generado'):
           # 1. Ejecutar el enrutador hacia Drive
 if es_modelo:
     from src.services.google_service import subir_modelo_a_drive
-    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
+    # Cambiamos buffer por buf_tpl.getvalue()
+    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buf_tpl.getvalue(), servicio_drive)
 else:
     # --- AHORA SÍ: Usamos tus variables reales ---
     carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
     
-    # Le enviamos esa carpeta exacta a la función
-    link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
+    # Le enviamos esa carpeta exacta a la función y usamos buf_tpl.getvalue()
+    link_drive = subir_a_drive(buf_tpl.getvalue(), nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
             
-            # 2. Armar la fila de datos para Sheets
-    link_final = link_drive if link_drive else "Error de Permisos en Drive"
+# 2. Armar la fila de datos para Sheets
+link_final = link_drive if link_drive else "Error de Permisos en Drive"
             
             # --- LÓGICA DE EXTRACCIÓN PARA SHEETS (REPLICADA) ---
-    partes_partida = str(v_partida).split(' - ')
-    nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
-    import re; nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
+partes_partida = str(v_partida).split(' - ')
+nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
+import re; nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
             
-    from datetime import datetime
-    val_empresa = str(v_cli).strip().upper()
-    val_fundo = str(nombre_limpio).strip().upper()
+from datetime import datetime
+val_empresa = str(v_cli).strip().upper()
+val_fundo = str(nombre_limpio).strip().upper()
             
-    if es_modelo:
-        val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
-    elif "Comercialización" in tipo_flujo:
-        val_cert = "COMERCIALIZACIÓN"
+if es_modelo:
+    val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
+elif "Comercialización" in tipo_flujo:
+    val_cert = "COMERCIALIZACIÓN"
     elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
         val_cert = "FINAL"
     else:
