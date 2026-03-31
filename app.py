@@ -509,10 +509,10 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
                             
           # --- 3. TERCERO: GUARDAR EL LINK PARA GOOGLE SHEETS ---
-          link_final = link_drive if link_drive else "Error de Permisos en Drive"
+                link_final = link_drive if link_drive else "Error de Permisos en Drive"
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
-        if es_modelo:
+                if es_modelo:
                     # SI ES MODELO: Usamos el formato corto y en mayúsculas
                     cliente_limpio = str(v_cli).strip().upper()
                     tipo_corto = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
