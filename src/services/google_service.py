@@ -7,7 +7,7 @@ import pandas as pd
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
-from src.config.settings import ID_SHEET_CONTROL, DRIVE_FOLDER_ID, ID_SHEET_REPOSITORIO
+from src.config.settings import ID_SHEET_CONTROL, ID_SHEET_REPOSITORIO
 
 # ====================================================================
 # --- BLOQUE 1: Lectura Segura de Google Sheets (Caché Opcional) ---
