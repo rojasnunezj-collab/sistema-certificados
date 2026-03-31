@@ -14,9 +14,18 @@ load_dotenv()
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 
-DRIVE_FOLDER_ID = os.getenv("DRIVE_FOLDER_ID")
-if not DRIVE_FOLDER_ID and "DRIVE_FOLDER_ID" in st.secrets:
-    DRIVE_FOLDER_ID = st.secrets["DRIVE_FOLDER_ID"]
+CARPETAS_DESTINO = {
+    "EPMI S.A.C.": {
+        "Comercialización": "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-", # El que me pasaste
+        "Disposición Final 1": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S",
+        "Disposición Final 2": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S"
+    },
+    "INECOVE S.A.C.": {
+        "Comercialización": "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-",
+        "Disposición Final 1": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S",
+        "Disposición Final 2": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S"
+    }
+}
 
 # ====================================================================
 # --- BLOQUE 2: Diccionario de Plantillas Documentales ---

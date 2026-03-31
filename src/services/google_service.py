@@ -88,22 +88,23 @@ import io
 import unicodedata
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo):
+import unicodedata
+
+def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=None):
     """Sube el archivo a Drive enrutándolo a la carpeta correcta según el tipo"""
     
-    # --- FUNCIÓN INTERNA PARA QUITAR TILDES Y MAYÚSCULAS ---
-    def normalizar(texto):
-        texto = str(texto).lower() # Todo a minúsculas
-        return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
-        
-    tipo_seguro = normalizar(tipo_flujo) # Convertimos ej: "Comercialización" -> "comercializacion"
-    
-    # --- ENRUTADOR DINÁMICO DE CARPETAS ---
-    # Ahora buscamos la palabra clave sin importar cómo esté escrita
-    if "comercializacion" in tipo_seguro:
-        folder_id = "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-" # Carpeta Comercialización
-    else:
-        folder_id = "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S" # Carpeta Servicios (Disp. Final 1 y 2)
+    # --- ENRUTADOR DINÁMICO ---
+    # Si NO le mandamos una carpeta específica desde app.py, usa tu lógica original como respaldo de emergencia
+    if not carpeta_id:
+        def normalizar(texto):
+            texto = str(texto).lower() # Todo a minúsculas
+            return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+            
+        tipo_seguro = normalizar(tipo_flujo) 
+        if "comercializacion" in tipo_seguro:
+            carpeta_id = "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-" # Comercialización
+        else:
+            carpeta_id = "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S" # Servicios (Disp. Final)
 
     drive, _ = obtener_servicios()
     if not drive: return None
@@ -112,8 +113,11 @@ def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo):
         file_metadata = {
             'name': f"{nombre_archivo}.docx", 
             'mimeType': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'parents': [folder_id]
+            'parents': [carpeta_id]  # <--- AQUÍ GUARDARÁ EN LA CARPETA EXACTA
         }
+        
+        from googleapiclient.http import MediaIoBaseUpload
+        import io
         
         media = MediaIoBaseUpload(
             io.BytesIO(contenido_bytes), 
@@ -130,7 +134,7 @@ def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo):
         return file.get('webViewLink')
         
     except Exception as e:
-        print(f"Error subiendo a Drive: {e}") # Usamos print porque st.error a veces falla dentro de funciones de backend
+        print(f"Error subiendo a Drive: {e}") 
         return None
 
 def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
