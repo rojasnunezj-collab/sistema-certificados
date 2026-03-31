@@ -31,59 +31,41 @@ def leer_sheet_seguro(pestaña):
 # ====================================================================
 def obtener_servicios():
     import os
-    from google.oauth2.credentials import Credentials
-    from google_auth_oauthlib.flow import InstalledAppFlow
-    from google.auth.transport.requests import Request
     from google.oauth2 import service_account
 
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
     creds = None
     
-    # ================================================================
-    # SOLUCIÓN CUENTAS PERSONALES: Flujo OAuth 2.0 (token.json)
-    # Autentica la app como tu usuario de Gmail, usando tus 15GB libres
-    # ================================================================
-    if os.path.exists('token.json'):
+    # 1. Intentar cargar desde Streamlit Secrets (NUBE) - ¡Prioridad #1!
+    if "google" in st.secrets:
         try:
-            creds = Credentials.from_authorized_user_file('token.json', scopes)
-        except: pass
-        
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        elif os.path.exists('credentials.json'):
-            # Abre el navegador local para otorgar permiso (solo la 1ra vez)
-            flow = InstalledAppFlow.from_client_secrets_file('credentials.json', scopes)
-            creds = flow.run_local_server(port=0)
-            with open('token.json', 'w') as token:
-                token.write(creds.to_json())
+            info = dict(st.secrets["google"])
+            # Auto-corrección de formato por si acaso
+            for k, v in info.items():
+                if isinstance(v, str):
+                    info[k] = v.replace("https=//", "https://")
+            creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        except Exception as e:
+            st.error(f"Error cargando credenciales de secrets en Google Service: {e}")
 
-    # Fallback 1: Identidad de Service Account (Limitado a 0 bytes sin Workspace)
+    # 2. Si no hay secrets, intentar cargar desde archivo local (PC)
     if not creds:
         cred_file = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
         if cred_file:
             try:
                 creds = service_account.Credentials.from_service_account_file(cred_file, scopes=scopes)
             except Exception as e:
-                st.warning(f"No se pudo cargar {cred_file}: {e}")
+                st.warning(f"No se pudo cargar archivo local {cred_file}: {e}")
 
-    # Fallback 2: Streamlit Secrets
-    if not creds:
+    # 3. Construir los servicios
+    if creds:
         try:
-            if "gcp_service_account" in st.secrets:
-                info = dict(st.secrets["gcp_service_account"])
-                # FIX: Auto-correcion de typos en secrets (ej: https=// -> https://)
-                for k, v in info.items():
-                    if isinstance(v, str):
-                        info[k] = v.replace("https=//", "https://")
-                creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
-        except Exception:
-            pass
-
-    try:
-        return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
-    except Exception as e:
-        st.error(f"⚠️ Error conectando con Google API: {e}")
+            return build('drive', 'v3', credentials=creds), build('sheets', 'v4', credentials=creds)
+        except Exception as e:
+            st.error(f"⚠️ Error conectando con Google API: {e}")
+            return None, None
+    else:
+        st.error("No se encontraron credenciales válidas para conectar a Google.")
         return None, None
 
 # ====================================================================
