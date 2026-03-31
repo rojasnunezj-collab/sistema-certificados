@@ -40,36 +40,36 @@ def procesar_guia_ia_vertex(pdf_bytes):
     modelos_flash = ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"]
     modelos_pro = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemini-1.5-pro-002"]
 
-    # ====================================================================
-    # --- BLOQUE 4: Prompt del Generative Engine (Strict Concatenation V3) ---
+   # ====================================================================
+    # --- BLOQUE 4: Prompt del Generative Engine (Strict Extraction V4) ---
     # ====================================================================
     prompt = """
-    Extrae estrictamente los datos del PDF adjunto ÚNICAMENTE en formato JSON. No incluyas markdown (```json).
+    INSTRUCCIÓN DE SISTEMA: Eres un extractor de datos OCR estricto. Tu única tarea es extraer datos del PDF adjunto y devolverlos ÚNICAMENTE en formato JSON válido. Tienes PROHIBIDO inventar datos, alucinar información o incluir texto fuera del JSON (como ```json o explicaciones).
     
-    ESTRUCTURA JSON Y REGLAS ESPECÍFICAS:
+    ESTRUCTURA JSON EXACTA Y REGLAS DE NEGOCIO OBLIGATORIAS:
     {
+        "cliente": "Razón Social exacta del Remitente o Cliente Emisor.",
+        "ruc_cliente": "Número de RUC del Remitente o Cliente Emisor.",
         "fecha": "dd/mm/yyyy", 
-        "serie": "Serie-Numero completo. Ejemplo: T001-000000", 
-        "vehiculo": "PLACA. Busca exhaustivamente en todo el documento. Es un dato OBLIGATORIO.", 
+        "serie": "Serie-Numero completo de la guía. Ejemplo: T001-000000", 
+        "vehiculo": "PLACA del vehículo. Busca en todo el documento. Obligatorio.", 
         
-        # --- REGLA OBLIGATORIA DE PARTIDA (CERO TOLERANCIA) ---
-        # TIENES PROHIBIDO devolver solo la dirección física.
-        # PASO 1: Extrae la dirección base.
-        # PASO 2: Busca OBLIGATORIAMENTE en la sección "Observaciones" o en el resto del documento el nombre del Fundo, Planta, Sede o Predio.
-        # PASO 3: Únelos con un guion.
-        # Si encuentras el fundo: "Dirección - [Nombre del Fundo]" (Ej: "Panamericana Sur Km 280 - Planta Empacadora")
-        # Si NO hay fundo en el PDF: "Dirección - Sede Principal" (Ej: "Panamericana Sur Km 280 - Sede Principal")
-        "punto_partida": "Valor concatenado obligatorio", 
+        # --- REGLA DE PARTIDA (ESTRICTA) ---
+        # PASO 1: Extrae la dirección base de partida.
+        # PASO 2: Busca exhaustivamente en "Observaciones" o resto del texto las palabras: "Fundo", "Planta", "Sede", "Sucursal" o "Predio".
+        # PASO 3: Si encuentras alguna, concatena: "Dirección - [Palabra encontrada + Nombre]". (Ej: "Panamericana Sur Km 280 - Planta Empacadora").
+        # PASO 4: Si y solo si NO hay ninguna de esas palabras en todo el PDF, concatena por defecto: "Dirección - Sede Principal".
+        "punto_partida": "Valor final concatenado", 
         
-        "punto_llegada": "Dirección Completa de Llegada", 
+        "punto_llegada": "Dirección Completa exacta de Llegada", 
         "destinatario": "Razón Social Completa del Destinatario", 
         
         "items": [
             {
-                "desc": "Descripción completa del bien", 
+                "desc": "Descripción literal del bien", 
                 "cant": "Número", 
-                "um": "Unidad (KG, UNID, GLN)", 
-                "peso": "Peso numérico explícito o 0.00"
+                "um": "Unidad de medida (KG, UNID, GLN)", 
+                "peso": "Peso numérico explícito (o 0.00 si no existe)"
             }
         ]
     }
