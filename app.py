@@ -19,7 +19,7 @@ from src.services.google_service import (
     leer_sheet_seguro  # <--- Agregado aquí
 )
 
-from src.config.settings import PLANTILLAS
+from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
 from src.utils.document_utils import inyectar_tabla_en_docx
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
@@ -36,7 +36,7 @@ if 'repo' not in st.session_state:
         st.session_state.repo = {
             "emisores": leer_sheet_seguro("EMPRESAS"),
             "clientes": leer_sheet_seguro("CLIENTES"),
-            "servicios": leer_sheet_seguro("COMERCIALIZACION")
+            "servicios": leer_sheet_seguro("SERVICIOS")
         }
 
 # Definimos la variable 'repo' global para el resto del código
@@ -336,7 +336,7 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
                 from src.services.google_service import leer_sheet_seguro
                 import pandas as pd
                 
-                df_empresas = leer_sheet_seguro("empresas")
+                df_empresas = leer_sheet_seguro("EMPRESAS")
                 
                 if not df_empresas.empty:
                     nombres_excel = df_empresas.iloc[:, 0].astype(str).str.strip().str.upper()
@@ -554,11 +554,16 @@ if st.session_state.get('generado'):
             servicio_drive, _ = obtener_servicios()
             
             # 1. Ejecutar el enrutador hacia Drive
-            if es_modelo:
-                from src.services.google_service import subir_modelo_a_drive
-                link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
-            else:
-                link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo)
+if es_modelo:
+    from src.services.google_service import subir_modelo_a_drive
+    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
+else:
+    # --- NUEVO: Buscamos la carpeta exacta ---
+    # Asegúrate de que v_empresa y v_tipo sean los nombres de tus variables (ej: "EPMI S.A.C." y "Comercialización")
+    carpeta_exacta = CARPETAS_DESTINO[v_empresa][v_tipo] 
+    
+    # Le enviamos esa carpeta exacta a la función
+    link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
             
             # 2. Armar la fila de datos para Sheets
             link_final = link_drive if link_drive else "Error de Permisos en Drive"
