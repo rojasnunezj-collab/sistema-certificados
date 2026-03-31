@@ -506,18 +506,18 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 else:
                     carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
                     # Aquí usamos final_bytes (el documento que ya tiene la tabla inyectada)
-                    link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
+                link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
                             
-                # --- 3. TERCERO: GUARDAR EL LINK PARA GOOGLE SHEETS ---
-                link_final = link_drive if link_drive else "Error de Permisos en Drive"
+          # --- 3. TERCERO: GUARDAR EL LINK PARA GOOGLE SHEETS ---
+          link_final = link_drive if link_drive else "Error de Permisos en Drive"
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
-                if es_modelo:
+        if es_modelo:
                     # SI ES MODELO: Usamos el formato corto y en mayúsculas
                     cliente_limpio = str(v_cli).strip().upper()
                     tipo_corto = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
                     nombre_archivo_final = f"{cliente_limpio} - {tipo_corto} - {v_corr}"
-                else:
+        else:
                     # SI ES NORMAL: Usamos la ruta larga de siempre
                     partes_partida = str(v_partida).split(' - ')
                     nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
