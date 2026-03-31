@@ -494,14 +494,7 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 items_para_tabla = v_items_df.to_dict('records')
                 final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
 
-                if es_modelo:
-                    from src.services.google_service import subir_modelo_a_drive
-                    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", final_bytes, drive)
-                else:
-                    carpeta_id_dinamica = CARPETAS_DESTINO[empresa_firma][tipo_flujo]
-                    link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_id_dinamica)
 
-                link_final = link_drive if link_drive else "Error de Permisos en Drive"
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
                 if es_modelo:
