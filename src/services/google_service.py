@@ -36,8 +36,24 @@ def obtener_servicios():
     scopes = ['https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/spreadsheets']
     creds = None
     
-    # 1. Intentar cargar desde Streamlit Secrets (NUBE) - ¡Prioridad #1!
-    if "google" in st.secrets:
+    # 0. Intentar cargar User Credentials (token.json) desde Streamlit Secrets (¡Prioridad Máxima anti-cuota!)
+    if "token" in st.secrets:
+        try:
+            tinfo = dict(st.secrets["token"])
+            from google.oauth2.credentials import Credentials
+            creds = Credentials(
+                token=tinfo.get('token'),
+                refresh_token=tinfo.get('refresh_token'),
+                token_uri=tinfo.get('token_uri', "https://oauth2.googleapis.com/token"),
+                client_id=tinfo.get('client_id'),
+                client_secret=tinfo.get('client_secret'),
+                scopes=scopes
+            )
+        except Exception as e:
+            st.error(f"Error cargando el token OAuth desde st.secrets: {e}")
+
+    # 1. Intentar cargar cuenta de servicio desde Streamlit Secrets (NUBE) - ¡Prioridad #2!
+    if not creds and "google" in st.secrets:
         try:
             info = dict(st.secrets["google"])
             # Auto-corrección de formato por si acaso
@@ -46,16 +62,26 @@ def obtener_servicios():
                     info[k] = v.replace("https=//", "https://")
             creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
         except Exception as e:
-            st.error(f"Error cargando credenciales de secrets en Google Service: {e}")
+            st.error(f"Error cargando credenciales de cuenta de servicio desde secrets: {e}")
 
-    # 2. Si no hay secrets, intentar cargar desde archivo local (PC)
+    # 2. Si no hay secrets, intentar cargar archivos locales (PC) - Prioridad local
     if not creds:
-        cred_file = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
-        if cred_file:
+        # Primero buscar token.json local (prioridad local anti-cuota)
+        if os.path.exists("token.json"):
             try:
-                creds = service_account.Credentials.from_service_account_file(cred_file, scopes=scopes)
+                from google.oauth2.credentials import Credentials
+                creds = Credentials.from_authorized_user_file("token.json", scopes)
             except Exception as e:
-                st.warning(f"No se pudo cargar archivo local {cred_file}: {e}")
+                st.warning(f"No se pudo cargar token.json local: {e}")
+        
+        # Si no hay token.json, probar con las service accounts locales
+        if not creds:
+            cred_file = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
+            if cred_file:
+                try:
+                    creds = service_account.Credentials.from_service_account_file(cred_file, scopes=scopes)
+                except Exception as e:
+                    st.warning(f"No se pudo cargar cuenta de servicio local {cred_file}: {e}")
 
     # 3. Construir los servicios
     if creds:
