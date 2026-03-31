@@ -492,6 +492,22 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 doc.render(ctx)
                 buf_tpl = io.BytesIO()
                 doc.save(buf_tpl)
+                
+                # --- PREPARAR EL DOCUMENTO ---
+                # (Si tienes código de inyectar_tabla_en_docx aquí, déjalo y usa la variable que salga de ahí. 
+                # Si no, simplemente sacamos los bytes de buf_tpl así:)
+                documento_final_bytes = buf_tpl.getvalue()
+
+                # --- 1. ENRUTADOR HACIA DRIVE ---
+                if es_modelo:
+                    from src.services.google_service import subir_modelo_a_drive
+                    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", documento_final_bytes, servicio_drive)
+                else:
+                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
+                    link_drive = subir_a_drive(documento_final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
+                            
+                # --- 2. RESULTADO PARA GOOGLE SHEETS ---
+                link_final = link_drive if link_drive else "Error de Permisos en Drive"
 
                 items_para_tabla = v_items_df.to_dict('records')
                 final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
