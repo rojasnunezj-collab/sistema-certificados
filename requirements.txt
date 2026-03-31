@@ -1,11 +1,9 @@
 streamlit
 pandas
-google-cloud-aiplatform>=1.70.0
-google-api-python-client>=2.100.0
+google-api-python-client
+google-auth
 google-auth-httplib2
 google-auth-oauthlib
+google-cloud-aiplatform
 docxtpl
 python-docx
-python-dotenv
-python-magic-bin; platform_system == 'Windows'
-python-magic; platform_system != 'Windows'
