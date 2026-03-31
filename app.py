@@ -581,10 +581,10 @@ if es_modelo:
     val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
 elif "Comercialización" in tipo_flujo:
     val_cert = "COMERCIALIZACIÓN"
-    elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
-        val_cert = "FINAL"
-    else:
-        val_cert = "SERVICIOS"
+elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
+    val_cert = "FINAL"
+else:
+    val_cert = "SERVICIOS"
             
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
     if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
