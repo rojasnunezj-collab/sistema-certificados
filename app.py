@@ -493,24 +493,23 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 buf_tpl = io.BytesIO()
                 doc.save(buf_tpl)
                 
-                # --- PREPARAR EL DOCUMENTO ---
-                # (Si tienes código de inyectar_tabla_en_docx aquí, déjalo y usa la variable que salga de ahí. 
-                # Si no, simplemente sacamos los bytes de buf_tpl así:)
-                documento_final_bytes = buf_tpl.getvalue()
-
-                # --- 1. ENRUTADOR HACIA DRIVE ---
-                if es_modelo:
-                    from src.services.google_service import subir_modelo_a_drive
-                    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", documento_final_bytes, servicio_drive)
-                else:
-                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
-                    link_drive = subir_a_drive(documento_final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
-                            
-                # --- 2. RESULTADO PARA GOOGLE SHEETS ---
-                link_final = link_drive if link_drive else "Error de Permisos en Drive"
-
+                # --- 1. PRIMERO: INYECTAR LA TABLA AL DOCUMENTO ---
+                # Preparamos los datos y metemos la tabla al Word
                 items_para_tabla = v_items_df.to_dict('records')
                 final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
+
+                # --- 2. SEGUNDO: SUBIR EL DOCUMENTO COMPLETO A DRIVE ---
+                if es_modelo:
+                    from src.services.google_service import subir_modelo_a_drive
+                    # Corregimos 'servicio_drive' por 'drive' que es tu variable real
+                    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", final_bytes, drive)
+                else:
+                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
+                    # Aquí usamos final_bytes (el documento que ya tiene la tabla inyectada)
+                    link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
+                            
+                # --- 3. TERCERO: GUARDAR EL LINK PARA GOOGLE SHEETS ---
+                link_final = link_drive if link_drive else "Error de Permisos en Drive"
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
                 if es_modelo:
