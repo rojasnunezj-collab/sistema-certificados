@@ -134,6 +134,8 @@ def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=None):
         return file.get('webViewLink')
         
     except Exception as e:
+        import streamlit as st
+        st.error(f"Google Drive rechazó la subida. Motivo técnico: {str(e)}")
         print(f"Error subiendo a Drive: {e}") 
         return None
 
@@ -178,17 +180,28 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
 
 def subir_modelo_a_drive(nombre_archivo, contenido_bytes, drive_service):
     """Sube el certificado modelo terminado a su carpeta exclusiva."""
-    CARPETA_DESTINO_MODELOS = '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E' # Carpeta de modelos terminados
-    
-    file_metadata = {
-        'name': nombre_archivo,
-        'parents': [CARPETA_DESTINO_MODELOS]
-    }
-    media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), 
-                              mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
-                              resumable=True)
-    archivo = drive_service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
-    return archivo.get('webViewLink')
+    try:
+        CARPETA_DESTINO_MODELOS = '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E' # Carpeta de modelos terminados
+        
+        file_metadata = {
+            'name': nombre_archivo,
+            'parents': [CARPETA_DESTINO_MODELOS]
+        }
+        media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), 
+                                  mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', 
+                                  resumable=True)
+        archivo = drive_service.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        return archivo.get('webViewLink')
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Google Drive rechazó la subida del Modelo. Motivo técnico: {str(e)}")
+        print(f"Error subiendo modelo a Drive: {e}")
+        return None
 
 @st.cache_data(ttl=600)
 def obtener_mapa_plantillas_drive(es_modelo=False):
