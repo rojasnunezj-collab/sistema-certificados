@@ -446,12 +446,10 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
         if drive:
             try:
                 if es_modelo:
-                    # RUTA MODELOS: Buscar en la nueva carpeta de Drive
                     from src.services.google_service import obtener_plantilla_drive
                     fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
                     doc = DocxTemplate(fh)
                 else:
-                    # RUTA OFICIAL: Usar la plantilla configurada en PLANTILLAS
                     id_p = PLANTILLAS[empresa_firma][tipo_flujo]
                     req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
                     fh = io.BytesIO()
@@ -493,22 +491,16 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 buf_tpl = io.BytesIO()
                 doc.save(buf_tpl)
                 
-                # --- 1. PRIMERO: INYECTAR LA TABLA AL DOCUMENTO ---
-                # Preparamos los datos y metemos la tabla al Word
                 items_para_tabla = v_items_df.to_dict('records')
                 final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
 
-                # --- 2. SEGUNDO: SUBIR EL DOCUMENTO COMPLETO A DRIVE ---
                 if es_modelo:
                     from src.services.google_service import subir_modelo_a_drive
-                    # Corregimos 'servicio_drive' por 'drive' que es tu variable real
                     link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", final_bytes, drive)
                 else:
-                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
-                    # Aquí usamos final_bytes (el documento que ya tiene la tabla inyectada)
-                link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
-                            
-          # --- 3. TERCERO: GUARDAR EL LINK PARA GOOGLE SHEETS ---
+                    carpeta_id_dinamica = CARPETAS_DESTINO[empresa_firma][tipo_flujo]
+                    link_drive = subir_a_drive(final_bytes, nombre_safe, tipo_flujo, carpeta_id=carpeta_id_dinamica)
+
                 link_final = link_drive if link_drive else "Error de Permisos en Drive"
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
@@ -517,7 +509,7 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                     cliente_limpio = str(v_cli).strip().upper()
                     tipo_corto = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
                     nombre_archivo_final = f"{cliente_limpio} - {tipo_corto} - {v_corr}"
-        else:
+                else:
                     # SI ES NORMAL: Usamos la ruta larga de siempre
                     partes_partida = str(v_partida).split(' - ')
                     nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
@@ -543,8 +535,9 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 st.balloons()
                 st.rerun()
 
-            except Exception as e: 
+            except Exception as e:
                 st.error(f"Error: {e}")
+                link_final = "Error"
 
 # --- 2. MOSTRAR DESCARGA Y REGISTRO (SOLO SI YA SE GENERÓ) ---
 if st.session_state.get('generado'):
