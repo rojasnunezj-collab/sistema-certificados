@@ -7,6 +7,10 @@ from google.oauth2 import service_account
 import os
 import json
 import streamlit as st
+import warnings
+
+# Suprimir explicitamente warnings de deprecación de Vertex AI para evitar KeyError: 'src' en Streamlit
+warnings.filterwarnings("ignore", category=UserWarning, module="vertexai")
 
 # ====================================================================
 # --- BLOQUE 1: Función Principal y Variables Estáticas ---
