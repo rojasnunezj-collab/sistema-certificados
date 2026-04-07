@@ -16,7 +16,8 @@ from src.services.google_service import (
     obtener_servicios, subir_a_drive, obtener_plantilla_drive, 
     subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
     obtener_datos_empresas_desde_sheets, registrar_en_control,
-    leer_sheet_seguro  # <--- Agregado aquí
+    leer_sheet_seguro,
+    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -66,6 +67,7 @@ with st.sidebar:
     
     # 1. Controles principales (4 espacios de indentación)
     es_modelo = st.checkbox("📝 Generar como Certificado Modelo", value=False)
+    repositorio_masivo = st.toggle("🗄️ Repositorio Masivo", value=False)
     modo_manual = st.toggle("🔴 Llenado Manual (Sin PDF)", value=False)
     
     if es_modelo:
@@ -132,11 +134,55 @@ with st.sidebar:
 # --- BLOQUE 3: UI - Ingesta y Procesamiento de Archivos ---
 # ====================================================================
 if not modo_manual:
-    # Verifica que tu línea sea así (usa uploader_key):
-    archivos = st.file_uploader("Sube tus guías", type=["pdf"], accept_multiple_files=True, key=f"uploader_{st.session_state.get('uploader_key', 0)}")
+    if repositorio_masivo:
+        st.subheader("🗄️ Búsqueda en Repositorio Masivo")
+        drv, sht = obtener_servicios()
+        cat = obtener_catalogo_guias(sht) if sht else {}
+        
+        if cat:
+            c1, c2, c3 = st.columns(3)
+            # Caja 1: Empresa
+            r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...")
+            
+            # Caja 2: Mes
+            opciones_mes = list(cat.get(r_empresa, {}).keys()) if r_empresa else []
+            r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa)
+            
+            # Caja 3: Fundo
+            opciones_fundo = cat.get(r_empresa, {}).get(r_mes, []) if r_mes else []
+            r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes)
+            
+            if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes)):
+                res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes)
+                if res:
+                    st.success(f"✅ Se encontraron {len(res)} guías nuevas para procesar.")
+                    st.session_state['guias_repo'] = res
+                else:
+                    st.warning("No se encontraron guías pendientes para estos filtros.")
+                    if 'guias_repo' in st.session_state: del st.session_state['guias_repo']
+                    
+            if st.session_state.get('guias_repo'):
+                if st.button("🧠 Procesar con IA (OCR)"):
+                    with st.spinner(f"Descargando {len(st.session_state['guias_repo'])} PDFs desde Drive..."):
+                        archivos_repo = descargar_guias_drive(drv, [r['nombre'] for r in st.session_state['guias_repo']])
+                        st.session_state['archivos_mock'] = archivos_repo
+                        st.session_state['procesar_ya'] = True
+
+    if not repositorio_masivo:
+        # Verifica que tu línea sea así (usa uploader_key):
+        archivos = st.file_uploader("Sube tus guías", type=["pdf"], accept_multiple_files=True, key=f"uploader_{st.session_state.get('uploader_key', 0)}")
+    else:
+        archivos = st.session_state.get('archivos_mock', None)
 
     if archivos:
-        if st.button("🔍 Procesar"):
+        ejecutar_ocr = False
+        if not repositorio_masivo and st.button("🔍 Procesar"):
+            ejecutar_ocr = True
+        elif repositorio_masivo and st.session_state.get('procesar_ya', False):
+            ejecutar_ocr = True
+            st.session_state['procesar_ya'] = False # Reset
+
+        if ejecutar_ocr:
             prog = st.progress(0)
             items, grl = [], None
             errores = 0
@@ -407,8 +453,14 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
             ruc_encontrado = diccionario_clientes.get(v_cli, "") if v_cli else ""
             v_ruc_c = st.text_input("RUC Cliente", value=ruc_encontrado)
         else:
+            from src.services.google_service import obtener_clientes_desde_sheets
+            diccionario_clientes = obtener_clientes_desde_sheets()
+            
             v_cli = st.text_input("Cliente (Extraído)", value=cliente_ocr)
-            v_ruc_c = st.text_input("RUC Cliente", value=ruc_crudo)
+            
+            # Autocompletado robusto: Si hace match con BD, usa su RUC. Si no, usa el extraído crudo de IA
+            ruc_calculado = diccionario_clientes.get(str(v_cli).strip().upper(), ruc_crudo)
+            v_ruc_c = st.text_input("RUC Cliente", value=ruc_calculado)
         
         v_serv = st.selectbox(
             "Servicio", 
@@ -424,6 +476,9 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
 # --- BLOQUE 5: UI - Generación de Word, Descarga y Registro en Sheets ---
 # ====================================================================
 st.divider()
+
+if 'msg_generado' not in st.session_state: st.session_state.msg_generado = False
+if 'msg_descargado' not in st.session_state: st.session_state.msg_descargado = False
 
 # --- 1. PROCESO DE GENERACIÓN (BOTÓN PRIMARIO - Oculto secuencialmente) ---
 # -- NUEVA LÓGICA STRICTA: Comprobar que todos los datos están llenos --
@@ -524,7 +579,9 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                 st.session_state.nombre_generado = nombre_archivo_final
                 st.session_state.generado = True
                 
-                st.success(f"✅ Certificado Generado: {nombre_archivo_final}")
+                st.session_state['msg_generado'] = True
+                st.session_state['msg_descargado'] = False
+                
                 st.balloons()
                 st.rerun()
 
@@ -534,15 +591,25 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
 
 # --- 2. MOSTRAR DESCARGA Y REGISTRO (SOLO SI YA SE GENERÓ) ---
 if st.session_state.get('generado'):
-    
+    if st.session_state.get('msg_generado'):
+        st.success("Certificado generado exitosamente en memoria.")
+        
     nombre_safe = st.session_state.get('nombre_generado', 'Certificado')
     
+    def confirmar_descarga():
+        st.session_state['msg_descargado'] = True
+        st.session_state['msg_generado'] = False
+
     st.download_button(
         label="📩 Descargar Certificado", 
         data=st.session_state.word_buffer, 
         file_name=f"{nombre_safe}.docx",
-        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        on_click=confirmar_descarga
     )
+    
+    if st.session_state.get('msg_descargado'):
+        st.success("Certificado descargado exitosamente.")
 
     if st.button("💾 Registrar y Subir a Drive"):
         with st.spinner("Subiendo a Google Drive y registrando en Sheets... 🚀"):
@@ -600,8 +667,21 @@ if st.session_state.get('generado'):
                         
             if registrar_en_control(datos_log):
                 if link_drive:
+                    st.session_state['msg_generado'] = False
+                    st.session_state['msg_descargado'] = False
+                    
                     st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
+                    
+                    # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
+                    if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
+                        _, sht_serv = obtener_servicios()
+                        filas = [g['fila'] for g in st.session_state['guias_repo']]
+                        if actualizar_bitacora_guias(sht_serv, filas):
+                            st.info("✅ Bitácora de repositorio masivo (Columna H) actualizada.")
+                        del st.session_state['guias_repo'] # Limpiar sesión
+                        
                     st.markdown(f"[🔗 Clic aquí para ver el documento en Drive]({link_drive})")
+                    
                     st.cache_data.clear() 
                 else:
                     st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")

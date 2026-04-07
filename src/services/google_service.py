@@ -356,3 +356,149 @@ def obtener_datos_empresas_desde_sheets():
     except Exception as e:
         print(f"Error leyendo base de datos de empresas: {e}")
         return {}
+
+# ====================================================================
+# --- BLOQUE 4: Funciones de Repositorio Masivo ---
+# ====================================================================
+ID_SHEET_GUIAS = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
+
+@st.cache_data(show_spinner=False, ttl=60)
+def obtener_catalogo_guias(_servicio_sheets):
+    """Extrae listado de empresas, mesas y fundos anidados para los selectbots."""
+    if not _servicio_sheets: return {}
+    try:
+        r = _servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        v = r.get('values', [])
+        
+        catalogo = {}
+        meses_es = {"01":"Enero", "02":"Febrero", "03":"Marzo", "04":"Abril", "05":"Mayo", "06":"Junio", "07":"Julio", "08":"Agosto", "09":"Septiembre", "10":"Octubre", "11":"Noviembre", "12":"Diciembre"}
+        
+        for fila in v:
+            # Solo consideramos si tiene al menos Fecha(0), Empresa(3), Fundo(4)
+            if len(fila) >= 6:
+                fecha_str = str(fila[0]).strip()
+                empresa = str(fila[3]).strip()
+                fundo = str(fila[4]).strip()
+                
+                mes_formateado = "Sin Fecha"
+                # Parseo manual de fecha DD/MM/YYYY o M/D/YYYY
+                if "/" in fecha_str:
+                    partes = fecha_str.split("/")
+                    if len(partes) >= 2:
+                        mes_num = partes[1].zfill(2)
+                        anio = partes[2] if len(partes) > 2 else ""
+                        nombre_mes = meses_es.get(mes_num, mes_num)
+                        mes_formateado = f"{nombre_mes} {anio}".strip()
+                elif fecha_str:
+                    mes_formateado = fecha_str
+                
+                if empresa:
+                    if empresa not in catalogo:
+                        catalogo[empresa] = {}
+                    if mes_formateado not in catalogo[empresa]:
+                        catalogo[empresa][mes_formateado] = set()
+                    if fundo:
+                        catalogo[empresa][mes_formateado].add(fundo)
+                        
+        # Formatear sets a listas ordenadas
+        for emp in catalogo:
+            for mes in catalogo[emp]:
+                catalogo[emp][mes] = sorted(list(catalogo[emp][mes]))
+        return catalogo
+    except Exception as e:
+        print(f"Error catalogo guias: {e}")
+        return {}
+
+def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
+    """Filtra y devuelve archivos a descargar, validando que no estén procesados."""
+    if not servicio_sheets: return []
+    try:
+        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        v = r.get('values', [])
+        
+        resultados = []
+        meses_es = {"01":"Enero", "02":"Febrero", "03":"Marzo", "04":"Abril", "05":"Mayo", "06":"Junio", "07":"Julio", "08":"Agosto", "09":"Septiembre", "10":"Octubre", "11":"Noviembre", "12":"Diciembre"}
+        
+        for i, fila in enumerate(v):
+            fila_real = i + 2 # Fila en excel (A2 en adelante)
+            if len(fila) >= 6:
+                fecha_str = str(fila[0]).strip()
+                f_empresa = str(fila[3]).strip()
+                f_fundo = str(fila[4]).strip()
+                f_archivo = str(fila[5]).strip()
+                bitacora = str(fila[7]).strip() if len(fila) > 7 else ""
+                
+                mes_formateado = "Sin Fecha"
+                if "/" in fecha_str:
+                    partes = fecha_str.split("/")
+                    if len(partes) >= 2:
+                        mes_num = partes[1].zfill(2)
+                        anio = partes[2] if len(partes) > 2 else ""
+                        nombre_mes = meses_es.get(mes_num, mes_num)
+                        mes_formateado = f"{nombre_mes} {anio}".strip()
+                elif fecha_str:
+                    mes_formateado = fecha_str
+                
+                # Coincidir con los filtros y que no contenga marca de 'Nuevo' procesado
+                if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and f_archivo:
+                    if "✅ Nuevo" not in bitacora:
+                        resultados.append({"nombre": f_archivo, "fila": fila_real})
+        return resultados
+    except Exception as e:
+        print(f"Error buscar guias: {e}")
+        return []
+
+def descargar_guias_drive(servicio_drive, nombres_archivos):
+    """Busca y descarga los PDFs del Drive, los devuelve en memoria."""
+    import io
+    from googleapiclient.http import MediaIoBaseDownload
+    
+    if not servicio_drive or not nombres_archivos: return []
+    
+    archivos_memoria = []
+    for nombre in nombres_archivos:
+        query = f"(name = '{nombre}' or name = '{nombre}.pdf') and trashed=false"
+        try:
+            res = servicio_drive.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            items = res.get('files', [])
+            if items:
+                archivo_id = items[0]['id']
+                req = servicio_drive.files().get_media(fileId=archivo_id)
+                fh = io.BytesIO()
+                downloader = MediaIoBaseDownload(fh, req)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                fh.seek(0)
+                
+                # Mock streamlit file properties
+                fh.name = items[0]['name']
+                archivos_memoria.append(fh)
+        except Exception as e:
+            print(f"Error descargando {nombre}: {e}")
+            
+    return archivos_memoria
+
+def actualizar_bitacora_guias(servicio_sheets, filas):
+    """Actualiza la columna H de las filas iteradas en un Batch Update."""
+    from datetime import datetime
+    if not servicio_sheets or not filas: return False
+    try:
+        marca = f"✅ Nuevo: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        
+        data = []
+        for fila in filas:
+            data.append({
+                "range": f"'Guias_recibidas'!H{fila}",
+                "values": [[marca]]
+            })
+            
+        body = {
+            "valueInputOption": "USER_ENTERED",
+            "data": data
+        }
+        servicio_sheets.spreadsheets().values().batchUpdate(spreadsheetId=ID_SHEET_GUIAS, body=body).execute()
+        return True
+    except Exception as e:
+        print(f"Error actualizando bitácora: {e}")
+        return False
