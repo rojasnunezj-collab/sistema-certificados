@@ -28,30 +28,25 @@ from src.utils.format_utils import (
     formato_nompropio
 )
 from docxtpl import DocxTemplate
-from googleapiclient.http import MediaIoBaseDownload
-import google_auth_oauthlib.flow
+import urllib.parse
+import requests
 
 def mostrar_login_google():
-    """Genera el flujo OAuth de Google originado en st.secrets."""
-    client_config = {
-        "web": {
-            "client_id": str(st.secrets["gcp_oauth"]["client_id"]).strip(),
-            "client_secret": str(st.secrets["gcp_oauth"]["client_secret"]).strip(),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()]
-        }
+    """Genera la URL OAuth puramente REST, sin librerías que obligen a PKCE"""
+    client_id = str(st.secrets["gcp_oauth"]["client_id"]).strip()
+    redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
+    
+    # Construimos el auth URL limpio
+    params = {
+        "client_id": client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+        "prompt": "consent",
+        "access_type": "offline"
     }
     
-    flow = google_auth_oauthlib.flow.Flow.from_client_config(
-        client_config,
-        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
-    )
-    flow.redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
-    
-    auth_url, _ = flow.authorization_url(prompt='consent')
-    if hasattr(flow, 'code_verifier'):
-        st.session_state['code_verifier'] = flow.code_verifier
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
     
     c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
     with c_btn2:
@@ -64,50 +59,48 @@ def mostrar_login_google():
             
         with st.expander("🛠️ Depurador Clandestino (Para Diagnóstico Streamlit Cloud)"):
             st.warning("Verifica que las siguientes llaves no tengan basura, espacios o códigos raros extraños.")
-            st.code(f"CLIENT_ID_EXTRAIDO:\n{str(st.secrets['gcp_oauth']['client_id']).strip()}", language="text")
+            st.code(f"CLIENT_ID_EXTRAIDO:\n{client_id}", language="text")
             st.code(f"URL_CRUDA_EMITIDA:\n{auth_url}", language="http")
             
     st.stop()
 
 def verificar_retorno_oauth():
-    """Atrapa el callback ?code= del URI retornado por Google."""
+    """Atrapa el callback ?code= e invoca un POST explícito, sorteando librerías problemáticas."""
     if 'code' in st.query_params:
         try:
-            client_config = {
-                "web": {
-                    "client_id": str(st.secrets["gcp_oauth"]["client_id"]).strip(),
-                    "client_secret": str(st.secrets["gcp_oauth"]["client_secret"]).strip(),
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()]
-                }
-            }
-            
-            flow = google_auth_oauthlib.flow.Flow.from_client_config(
-                client_config,
-                scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
-            )
-            flow.redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
-            
-            # 1. Acaparar el string de query params (Soporte local y server)
             code = st.query_params['code']
             if isinstance(code, list): code = code[0]
                 
-            # INYECCIÓN CONTRA PKCE: Restauramos el Code Verifier cacheado
-            if 'code_verifier' in st.session_state:
-                flow.code_verifier = st.session_state['code_verifier']
+            # Intercambio Crudo REST hacia Google Cloud (Blindado)
+            token_url = "https://oauth2.googleapis.com/token"
+            data = {
+                "code": code,
+                "client_id": str(st.secrets["gcp_oauth"]["client_id"]).strip(),
+                "client_secret": str(st.secrets["gcp_oauth"]["client_secret"]).strip(),
+                "redirect_uri": str(st.secrets["gcp_oauth"]["redirect_uri"]).strip(),
+                "grant_type": "authorization_code"
+            }
+            res = requests.post(token_url, data=data).json()
+            
+            if "error" in res:
+                st.error(f"Rechazo en Fase Token: {res.get('error_description', res['error'])}")
+                st.stop()
                 
-            flow.fetch_token(code=code)
-            session = flow.authorized_session()
-            user_info = session.get('https://www.googleapis.com/oauth2/v1/userinfo').json()
+            access_token = res["access_token"]
             
-            st.session_state['usuario_email'] = user_info.get('email', '').strip().lower()
+            # Recuperar perfil de Usuario
+            usr_resp = requests.get(
+                "https://www.googleapis.com/oauth2/v1/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"}
+            ).json()
             
-            # 2. Limpiar la barra del navegador para evitar reprocesamientos temporales
+            st.session_state['usuario_email'] = usr_resp.get('email', '').strip().lower()
+            
+            # Limpiar la URL y forzar login
             st.query_params.clear()
             st.rerun()
         except Exception as e:
-            st.error(f"Error procesando token OAuth de respuesta: {e}")
+            st.error(f"Falla crítica procesando autenticación REST: {e}")
             st.stop()
 
 # --- CARGA DE BASES DE DATOS (REPOS) ---
