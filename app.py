@@ -51,11 +51,12 @@ def mostrar_login_google():
     c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
     with c_btn2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(f'''
-            <a href="{auth_url}" target="_top" 
-            style="display:block; text-align:center; padding:15px 20px; background-color:#4285F4; color:white; border-radius:8px; text-decoration:none; font-weight:bold; font-size:16px;">
-            Identificarse de forma segura con Google
-            </a>''', unsafe_allow_html=True)
+        st.link_button(
+            "Identificarse de forma segura con Google", 
+            auth_url, 
+            type="primary", 
+            use_container_width=True
+        )
             
     st.stop()
 
