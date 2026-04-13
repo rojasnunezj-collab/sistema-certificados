@@ -51,15 +51,12 @@ def mostrar_login_google():
     c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
     with c_btn2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        import streamlit.components.v1 as components
-        components.html(f'''
-            <div style="text-align: center; font-family: sans-serif;">
-                <a href="{auth_url}" target="_top" 
-                style="display: block; padding: 12px 0px; background-color: #4285F4; color: white; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px; width: 100%;">
-                Identificarse de forma segura con Google
-                </a>
-            </div>
-        ''', height=60)
+        st.link_button(
+            "Identificarse de forma segura con Google", 
+            auth_url, 
+            type="primary", 
+            use_container_width=True
+        )
             
     st.stop()
 
