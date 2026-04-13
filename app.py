@@ -57,11 +57,6 @@ def mostrar_login_google():
             Identificarse de forma segura con Google
             </a>''', unsafe_allow_html=True)
             
-        with st.expander("🛠️ Depurador Clandestino (Para Diagnóstico Streamlit Cloud)"):
-            st.warning("Verifica que las siguientes llaves no tengan basura, espacios o códigos raros extraños.")
-            st.code(f"CLIENT_ID_EXTRAIDO:\n{client_id}", language="text")
-            st.code(f"URL_CRUDA_EMITIDA:\n{auth_url}", language="http")
-            
     st.stop()
 
 def verificar_retorno_oauth():
