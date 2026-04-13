@@ -502,3 +502,65 @@ def actualizar_bitacora_guias(servicio_sheets, filas):
     except Exception as e:
         print(f"Error actualizando bitácora: {e}")
         return False
+
+def obtener_usuarios_roles():
+    """Descarga los roles de usuario desde la hoja 'Usuario_Roles'."""
+    from src.services.google_service import obtener_servicios
+    _, servicio_sheets = obtener_servicios()
+    
+    if not servicio_sheets:
+        return {}
+        
+    try:
+        # Apunta a la Base de Datos Exclusiva de Seguridad (RBAC)
+        SHEET_ID = "1OglcHUuRkD6LErUMevr-tOmAsLZpQEk2OKn8NyJN8mo" 
+        r = servicio_sheets.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID, 
+            range="'Usuario_Roles'!A2:D"
+        ).execute()
+        
+        v = r.get('values', [])
+        usuarios = {}
+        for fila in v:
+            if len(fila) >= 4:
+                email = str(fila[0]).strip().lower()
+                nombre = str(fila[1]).strip()
+                rol = str(fila[2]).strip()
+                estado = str(fila[3]).strip()
+                
+                if email:
+                    usuarios[email] = {
+                        "Nombre": nombre,
+                        "Rol": rol,
+                        "Estado": estado
+                    }
+        return usuarios
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Error cargando dict de roles: {e}")
+        return {}
+
+def registrar_auditoria_sistema(correo, modo, guias_leidas, guias_certificadas):
+    """Registra en la pestaña 'Control' del Sheet RBAC."""
+    SHEET_ID = "1OglcHUuRkD6LErUMevr-tOmAsLZpQEk2OKn8NyJN8mo" 
+    from src.services.google_service import obtener_servicios
+    from datetime import datetime
+    _, sheets = obtener_servicios()
+    if not sheets: return False
+    
+    fecha = datetime.now().strftime("%d/%m/%Y")
+    hora = datetime.now().strftime("%H:%M:%S")
+    
+    datos = [fecha, hora, str(correo), str(modo), str(guias_leidas), str(guias_certificadas)]
+    
+    try:
+        sheets.spreadsheets().values().append(
+            spreadsheetId=SHEET_ID, range="'Control'!A:F",
+            valueInputOption="USER_ENTERED", 
+            insertDataOption="INSERT_ROWS",
+            body={"values": [datos]}
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error registrando auditoría: {e}")
+        return False

@@ -29,6 +29,74 @@ from src.utils.format_utils import (
 )
 from docxtpl import DocxTemplate
 from googleapiclient.http import MediaIoBaseDownload
+import google_auth_oauthlib.flow
+
+def mostrar_login_google():
+    """Genera el flujo OAuth de Google originado en st.secrets."""
+    client_config = {
+        "web": {
+            "client_id": st.secrets["gcp_oauth"]["client_id"],
+            "client_secret": st.secrets["gcp_oauth"]["client_secret"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "redirect_uris": [st.secrets["gcp_oauth"]["redirect_uri"]]
+        }
+    }
+    
+    flow = google_auth_oauthlib.flow.Flow.from_client_config(
+        client_config,
+        scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
+    )
+    flow.redirect_uri = st.secrets["gcp_oauth"]["redirect_uri"]
+    
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    
+    c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
+    with c_btn2:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(f'''
+            <a href="{auth_url}" target="_self" 
+            style="display:block; text-align:center; padding:15px 20px; background-color:#4285F4; color:white; border-radius:8px; text-decoration:none; font-weight:bold; font-size:16px;">
+            Identificarse de forma segura con Google
+            </a>''', unsafe_allow_html=True)
+    st.stop()
+
+def verificar_retorno_oauth():
+    """Atrapa el callback ?code= del URI retornado por Google."""
+    if 'code' in st.query_params:
+        try:
+            client_config = {
+                "web": {
+                    "client_id": st.secrets["gcp_oauth"]["client_id"],
+                    "client_secret": st.secrets["gcp_oauth"]["client_secret"],
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [st.secrets["gcp_oauth"]["redirect_uri"]]
+                }
+            }
+            
+            flow = google_auth_oauthlib.flow.Flow.from_client_config(
+                client_config,
+                scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
+            )
+            flow.redirect_uri = st.secrets["gcp_oauth"]["redirect_uri"]
+            
+            # 1. Acaparar el string de query params (Soporte local y server)
+            code = st.query_params['code']
+            if isinstance(code, list): code = code[0]
+                
+            flow.fetch_token(code=code)
+            session = flow.authorized_session()
+            user_info = session.get('https://www.googleapis.com/oauth2/v1/userinfo').json()
+            
+            st.session_state['usuario_email'] = user_info.get('email', '').strip().lower()
+            
+            # 2. Limpiar la barra del navegador para evitar reprocesamientos temporales
+            st.query_params.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Error procesando token OAuth de respuesta: {e}")
+            st.stop()
 
 # --- CARGA DE BASES DE DATOS (REPOS) ---
 # Esto garantiza que 'repo' exista siempre en toda la App
@@ -45,6 +113,35 @@ repo = st.session_state.repo
 
 # --- Configuración Inicial
 st.set_page_config(page_title="Certificador AI V2", layout="wide")
+
+# ====================================================================
+# --- LOGICA DE GATEKEEPER (RBAC) ---
+# ====================================================================
+# 1. Evaluar si la URL trae un token de acceso pendiendo de intercambio
+verificar_retorno_oauth()
+
+# 2. Bloqueo 1: Denegar si no existe un token de sesión
+if 'usuario_email' not in st.session_state:
+    st.warning("🔒 Acceso Restringido: Requiere autenticación de empleado.")
+    mostrar_login_google()
+
+# 3. Empalmar email en memoria contra la base estocástica de Sheets
+correo_actual = st.session_state['usuario_email']
+from src.services.google_service import obtener_usuarios_roles
+bd_usuarios = obtener_usuarios_roles()
+
+# 4. Bloqueo 2: Denegar si no hace match o si su cuenta fue deshabilitada.
+if correo_actual not in bd_usuarios or bd_usuarios[correo_actual].get('Estado', '').strip().upper() != 'ACTIVO':
+    st.error(f"⛔ Acceso denegado: El usuario '{correo_actual}' no cuenta con un rol Asignado o está inactivo.")
+    st.stop()
+
+# 5. Adquisición Exitosas: Inyectar el Rol en el hilo continuo
+st.session_state['usuario_rol'] = bd_usuarios[correo_actual].get('Rol', 'User')
+st.session_state['usuario_nombre'] = bd_usuarios[correo_actual].get('Nombre', correo_actual)
+
+with st.sidebar:
+    st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
+    st.divider()
 
 if 'datos_extraidos' not in st.session_state:
     st.session_state.datos_extraidos = None
@@ -129,6 +226,15 @@ with st.sidebar:
         # 3. Recargamos la pantalla suavemente
         st.rerun()
 
+    # Renderizado Quirúrgico Basado en RBAC
+    if st.session_state.get('usuario_rol') == 'Admin':
+        st.divider()
+        with st.expander("🛠️ Admin Tools"):
+            st.warning("Controles Elevados")
+            if st.button("Forzar Purga de Caché GCP", use_container_width=True):
+                st.cache_data.clear()
+                st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
+
 
 # ====================================================================
 # --- BLOQUE 3: UI - Ingesta y Procesamiento de Archivos ---
@@ -187,6 +293,7 @@ if not modo_manual:
             items, grl = [], None
             errores = 0
             total = len(archivos)
+            st.session_state['total_pdfs_leidos'] = total
             
             for i, arc in enumerate(archivos):
                 d = procesar_guia_ia_vertex(arc.read())
@@ -658,8 +765,20 @@ if st.session_state.get('generado'):
             if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
                 guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
                 val_guia_completa = ", ".join(guias_lista)
+                num_certificadas = len(guias_lista)
             else:
                 val_guia_completa = str(v_guia).strip().upper()
+                num_certificadas = 1 if val_guia_completa else 0
+
+            # --- NUEVO: Inyección del Registro de Auditoría Control ---
+            modo_audio = "Modelo" if es_modelo else ("Manual" if modo_manual else ("OCR Masivo" if repositorio_masivo else "OCR PDF"))
+            from src.services.google_service import registrar_auditoria_sistema
+            registrar_auditoria_sistema(
+                st.session_state.get('usuario_email', 'Desconocido'), 
+                modo_audio, 
+                st.session_state.get('total_pdfs_leidos', 0), 
+                num_certificadas
+            )
 
             # --- 2. Fecha y armado de datos para Sheets ---
             fecha_registro = datetime.now().strftime("%d/%m/%Y")
