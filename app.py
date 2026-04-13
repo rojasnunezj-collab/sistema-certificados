@@ -50,6 +50,8 @@ def mostrar_login_google():
     flow.redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
     
     auth_url, _ = flow.authorization_url(prompt='consent')
+    if hasattr(flow, 'code_verifier'):
+        st.session_state['code_verifier'] = flow.code_verifier
     
     c_btn1, c_btn2, c_btn3 = st.columns([1,2,1])
     with c_btn2:
@@ -90,6 +92,10 @@ def verificar_retorno_oauth():
             # 1. Acaparar el string de query params (Soporte local y server)
             code = st.query_params['code']
             if isinstance(code, list): code = code[0]
+                
+            # INYECCIÓN CONTRA PKCE: Restauramos el Code Verifier cacheado
+            if 'code_verifier' in st.session_state:
+                flow.code_verifier = st.session_state['code_verifier']
                 
             flow.fetch_token(code=code)
             session = flow.authorized_session()
