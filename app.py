@@ -35,11 +35,11 @@ def mostrar_login_google():
     """Genera el flujo OAuth de Google originado en st.secrets."""
     client_config = {
         "web": {
-            "client_id": st.secrets["gcp_oauth"]["client_id"],
-            "client_secret": st.secrets["gcp_oauth"]["client_secret"],
+            "client_id": str(st.secrets["gcp_oauth"]["client_id"]).strip(),
+            "client_secret": str(st.secrets["gcp_oauth"]["client_secret"]).strip(),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
-            "redirect_uris": [st.secrets["gcp_oauth"]["redirect_uri"]]
+            "redirect_uris": [str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()]
         }
     }
     
@@ -47,7 +47,7 @@ def mostrar_login_google():
         client_config,
         scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
     )
-    flow.redirect_uri = st.secrets["gcp_oauth"]["redirect_uri"]
+    flow.redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
     
     auth_url, _ = flow.authorization_url(prompt='consent')
     
@@ -59,6 +59,12 @@ def mostrar_login_google():
             style="display:block; text-align:center; padding:15px 20px; background-color:#4285F4; color:white; border-radius:8px; text-decoration:none; font-weight:bold; font-size:16px;">
             Identificarse de forma segura con Google
             </a>''', unsafe_allow_html=True)
+            
+        with st.expander("🛠️ Depurador Clandestino (Para Diagnóstico Streamlit Cloud)"):
+            st.warning("Verifica que las siguientes llaves no tengan basura, espacios o códigos raros extraños.")
+            st.code(f"CLIENT_ID_EXTRAIDO:\n{str(st.secrets['gcp_oauth']['client_id']).strip()}", language="text")
+            st.code(f"URL_CRUDA_EMITIDA:\n{auth_url}", language="http")
+            
     st.stop()
 
 def verificar_retorno_oauth():
@@ -67,11 +73,11 @@ def verificar_retorno_oauth():
         try:
             client_config = {
                 "web": {
-                    "client_id": st.secrets["gcp_oauth"]["client_id"],
-                    "client_secret": st.secrets["gcp_oauth"]["client_secret"],
+                    "client_id": str(st.secrets["gcp_oauth"]["client_id"]).strip(),
+                    "client_secret": str(st.secrets["gcp_oauth"]["client_secret"]).strip(),
                     "auth_uri": "https://accounts.google.com/o/oauth2/auth",
                     "token_uri": "https://oauth2.googleapis.com/token",
-                    "redirect_uris": [st.secrets["gcp_oauth"]["redirect_uri"]]
+                    "redirect_uris": [str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()]
                 }
             }
             
@@ -79,7 +85,7 @@ def verificar_retorno_oauth():
                 client_config,
                 scopes=["openid", "https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"]
             )
-            flow.redirect_uri = st.secrets["gcp_oauth"]["redirect_uri"]
+            flow.redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
             
             # 1. Acaparar el string de query params (Soporte local y server)
             code = st.query_params['code']
