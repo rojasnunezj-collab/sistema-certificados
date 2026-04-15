@@ -74,12 +74,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
         "serie": "Serie-Numero completo de la guía. Ejemplo: T001-000000", 
         "vehiculo": "PLACA del vehículo. Busca en todo el documento. Obligatorio.", 
         
-        # --- REGLA DE PARTIDA (ESTRICTA) ---
-        # PASO 1: Extrae la dirección base de partida.
-        # PASO 2: Busca exhaustivamente en el bloque de OBSERVACIONES o resto del texto palabras clave: "Fundo", "Planta", "Sede", "Sucursal" o "Predio". REGLA CRÍTICA: Debes leer TODO el texto en Observaciones. Si dice "PLANTA EMPACADORA", extrae exactamente ese nombre. Lo mismo para el fundo "LA ESPERANZA" u otros fundos y plantas especificados.
-        # PASO 3: Si encuentras alguna de estas ubicaciones, concatena: "Dirección - [Palabra encontrada + Nombre]". (Ej: "Panamericana Sur Km 280 - PLANTA EMPACADORA").
-        # PASO 4: Si y solo si NO hay ninguna de esas palabras en todo el PDF, concatena por defecto: "Dirección - Sede Principal".
-        "punto_partida": "Valor final concatenado", 
+        "punto_partida": "REGLA DE ORO DE EXTRACCIÓN: Primero, EXAMINA OBLIGATORIAMENTE el bloque 'OBSERVACIONES' de la guía. Busca palabras clave: 'PLANTA EMPACADORA', 'LOS LAURELES', 'LA ESPERANZA' u otros Fundos. Concatena la dirección de partida base con el nombre extraído usando un guion. Ejemplo de Salida Obligatoria: 'Direccion de Partida - PLANTA EMPACADORA' o 'Av. Sur Km 280 - FUNDO LOS LAURELES'. Si y solo si el campo observaciones está vacío respecto a fundos/plantas, usa ' - Sede Principal'.", 
         
         "punto_llegada": "Dirección Completa exacta de Llegada. IMPORTANTE: Si en el documento (especialmente para la empresa Los Olivos de Villacuri) el destino o planta se indica simplemente como 'EMPACADORA', debes extraer la palabra 'EMPACADORA' y asignarla obligatoriamente a este campo. No lo dejes vacío.", 
         "destinatario": "Razón Social Completa del Destinatario", 
