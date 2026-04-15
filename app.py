@@ -115,6 +115,11 @@ repo = st.session_state.repo
 # --- Configuración Inicial
 st.set_page_config(page_title="Certificador AI V2", layout="wide")
 
+if 'metricas_exitosos' not in st.session_state:
+    st.session_state['metricas_exitosos'] = 0
+if 'metricas_errores' not in st.session_state:
+    st.session_state['metricas_errores'] = 0
+
 # ====================================================================
 # --- LOGICA DE GATEKEEPER (RBAC) ---
 # ====================================================================
@@ -164,7 +169,7 @@ with st.sidebar:
     st.header("Configuración de Flujo")
     
     # 1. Controles principales (4 espacios de indentación)
-    es_modelo = st.checkbox("📝 Generar como Certificado Modelo", value=False)
+    es_modelo = st.toggle("📝 Generar como Certificado Modelo", value=False)
     repositorio_masivo = st.toggle("🗄️ Repositorio Masivo", value=False)
     modo_manual = st.toggle("🔴 Llenado Manual (Sin PDF)", value=False)
     
@@ -232,6 +237,13 @@ with st.sidebar:
         st.divider()
         with st.expander("🛠️ Admin Tools"):
             st.warning("Controles Elevados")
+            
+            st.markdown("### 📊 Rendimiento de Sesión")
+            col1, col2 = st.columns(2)
+            col1.metric(label="Certificados Generados", value=st.session_state['metricas_exitosos'], delta="Esta sesión")
+            col2.metric(label="Errores Interceptados", value=st.session_state['metricas_errores'], delta="Alertas", delta_color="inverse")
+            st.divider()
+            
             if st.button("Forzar Purga de Caché GCP", use_container_width=True):
                 st.cache_data.clear()
                 st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
@@ -603,11 +615,108 @@ v_df_seguro = locals().get('v_items_df', None)
 
 if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_seguro is not None and not v_df_seguro.empty:
 
+    modalidad_gen = st.radio("Modalidad de Generación", [
+        "Agrupada (1 Certificado para todas las guías)", 
+        "Individual (1 Certificado por cada guía)"
+    ])
+    
     # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
-    if st.button("GENERAR CERTIFICADO", type="primary"):
+    if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
         drive, _ = obtener_servicios()
         if drive:
             try:
+                if "Individual" in modalidad_gen:
+                    guias_unicas = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+                    if not guias_unicas: guias_unicas = ["S/N"]
+                    
+                    corr_actual_int = int(str(v_corr).strip() or 1)
+                    progreso = st.progress(0)
+                    from datetime import datetime, timedelta
+                    
+                    exitosos = []
+                    fallidos = []
+                    
+                    for idx, archivo in enumerate(guias_unicas):
+                        st.toast(f"Procesando guía {archivo}...")
+                        try:
+                            df_filtrado = v_items_df[v_items_df['guia_origen'] == archivo] if archivo != "S/N" else v_items_df
+                            corr_str = f"{corr_actual_int:03d}"
+                            
+                            if es_modelo:
+                                from src.services.google_service import obtener_plantilla_drive
+                                fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
+                                doc = DocxTemplate(fh)
+                            else:
+                                id_p = PLANTILLAS[empresa_firma][tipo_flujo]
+                                req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                                fh = io.BytesIO()
+                                from googleapiclient.http import MediaIoBaseDownload
+                                dl = MediaIoBaseDownload(fh, req)
+                                done = False
+                                while not done: _, done = dl.next_chunk()
+                                doc = DocxTemplate(io.BytesIO(fh.getvalue()))
+                                
+                            ctx = {
+                                "CORRELATIVO": corr_str, "TITULO": v_tit, "REGISTRO": emisor_reg,
+                                "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
+                                "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
+                                "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
+                                "DIRECCION_LLEGADA": v_llegada, "LLEGADA": v_llegada,
+                                "EMPRESA_2": emisor_nombre,
+                                "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
+                                "DESTINATARIO_FINAL": emisor_nombre, "EMPRESA": emisor_nombre, 
+                                "RUC_EMPRESA": emisor_ruc, "RUC": emisor_ruc,
+                                "EMISOR": emisor_nombre, "RUC_EMISOR": emisor_ruc        
+                            }
+                            doc.render(ctx)
+                            buf_tpl = io.BytesIO()
+                            doc.save(buf_tpl)
+                            final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), df_filtrado.to_dict('records'))
+                            
+                            tipo_cod = "COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER"
+                            destino_raw = str(v_partida).split(' - ')[-1].strip()
+                            import re
+                            destino_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', destino_raw).strip().upper()
+                            destino_final = str(v_cli).strip().upper() if not destino_limpio or destino_limpio == "NAN" else destino_limpio
+                            nombre_archivo_final = f"CERT-{tipo_cod}-{corr_str}-{destino_final}"
+                            
+                            if es_modelo:
+                                from src.services.google_service import subir_modelo_a_drive
+                                link_drive = subir_modelo_a_drive(f"{nombre_archivo_final}.docx", final_bytes, drive)
+                                val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
+                            else:
+                                carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
+                                link_drive = subir_a_drive(final_bytes, nombre_archivo_final, tipo_flujo, carpeta_id=carpeta_exacta)
+                                val_cert = nombre_archivo_final
+                                
+                            link_final = link_drive if link_drive else "Error de Permisos en Drive"
+                            fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
+                            datos_log = [fecha_registro, str(v_cli).strip().upper(), destino_final, corr_str, val_cert, str(archivo).upper(), "", link_final, "", ""]
+                            registrar_en_control(datos_log)
+                            
+                            corr_actual_int += 1
+                            exitosos.append(nombre_archivo_final)
+                            st.session_state['metricas_exitosos'] += 1
+                            
+                        except Exception as e:
+                            fallidos.append((archivo, str(e)))
+                            st.session_state['metricas_errores'] += 1
+                            continue
+                        finally:
+                            progreso.progress((idx + 1) / len(guias_unicas))
+                            
+                    if exitosos:
+                        st.success(f"✅ Se generaron {len(exitosos)} certificados exitosamente.")
+                        st.balloons()
+                        
+                    if fallidos:
+                        st.error(f"⚠️ Hubo {len(fallidos)} guías que fallaron durante la generación.")
+                        with st.expander("Ver detalles de errores"):
+                            for f_arch, f_err in fallidos:
+                                st.write(f"- **Guía {f_arch}**: {f_err}")
+                                
+                    st.info("El lote de certificados individuales finalizó.")
+                    st.stop()
                 if es_modelo:
                     from src.services.google_service import obtener_plantilla_drive
                     fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
@@ -638,7 +747,7 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
                     "DIRECCION_LLEGADA": v_llegada, 
                     "LLEGADA": v_llegada,
                     "EMPRESA_2": emisor_nombre,
-                    "FECHA_EMISION": v_fec_emis,
+                    "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
                     "DESTINATARIO_FINAL": emisor_nombre,
                     
                     # --- VARIABLES PARA PLANTILLAS NORMALES ---
@@ -660,27 +769,18 @@ if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_
 
                 
                 # --- LÓGICA DE NOMENCLATURA ESTRICTA ---
-                if es_modelo:
-                    # SI ES MODELO: Usamos el formato corto y en mayúsculas
-                    cliente_limpio = str(v_cli).strip().upper()
-                    tipo_corto = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
-                    nombre_archivo_final = f"{cliente_limpio} - {tipo_corto} - {v_corr}"
+                tipo_cod = "COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER"
+                
+                destino_raw = str(v_partida).split(' - ')[-1].strip()
+                import re
+                destino_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', destino_raw).strip().upper()
+                
+                if not destino_limpio or destino_limpio == "NAN":
+                    destino_final = str(v_cli).strip().upper()
                 else:
-                    # SI ES NORMAL: Usamos la ruta larga de siempre
-                    partes_partida = str(v_partida).split(' - ')
-                    nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
-                    
-                    import re
-                    nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
-                    
-                    etiqueta_tipo = "Comercializacion" if "Comercialización" in tipo_flujo else "Servicio"
-                    
-                    from src.utils.format_utils import formato_nompropio
-                    cli_format = formato_nompropio(v_cli)
-                    planta_format = formato_nompropio(nombre_limpio)
-                    etiq_format = formato_nompropio(etiqueta_tipo)
-                    
-                    nombre_archivo_final = f"{cli_format} - {planta_format} - {etiq_format} - {v_corr}"
+                    destino_final = destino_limpio
+                
+                nombre_archivo_final = f"CERT-{tipo_cod}-{v_corr}-{destino_final}"
                 
                 # GUARDAR EN SESIÓN PARA PERSISTENCIA
                 st.session_state.word_buffer = final_bytes
@@ -755,12 +855,8 @@ if st.session_state.get('generado'):
                         
             if es_modelo:
                 val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
-            elif "Comercialización" in tipo_flujo:
-                val_cert = "COMERCIALIZACIÓN"
-            elif "Final" in tipo_flujo or "Disposición" in tipo_flujo:
-                val_cert = "FINAL"
             else:
-                val_cert = "SERVICIOS"
+                val_cert = nombre_archivo_final
                         
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
             if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
@@ -789,6 +885,7 @@ if st.session_state.get('generado'):
                 if link_drive:
                     st.session_state['msg_generado'] = False
                     st.session_state['msg_descargado'] = False
+                    st.session_state['metricas_exitosos'] += 1
                     
                     st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
                     
