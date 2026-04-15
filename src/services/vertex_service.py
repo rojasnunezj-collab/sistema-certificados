@@ -81,7 +81,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
         # PASO 4: Si y solo si NO hay ninguna de esas palabras en todo el PDF, concatena por defecto: "Dirección - Sede Principal".
         "punto_partida": "Valor final concatenado", 
         
-        "punto_llegada": "Dirección Completa exacta de Llegada", 
+        "punto_llegada": "Dirección Completa exacta de Llegada. IMPORTANTE: Si en el documento (especialmente para la empresa Los Olivos de Villacuri) el destino o planta se indica simplemente como 'EMPACADORA', debes extraer la palabra 'EMPACADORA' y asignarla obligatoriamente a este campo. No lo dejes vacío.", 
         "destinatario": "Razón Social Completa del Destinatario", 
         
         "items": [
