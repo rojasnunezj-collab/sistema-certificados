@@ -505,6 +505,31 @@ def actualizar_bitacora_guias(servicio_sheets, filas):
         print(f"Error actualizando bitácora: {e}")
         return False
 
+def buscar_actualizar_guia(servicio_sheets, num_guia):
+    from datetime import datetime, timedelta
+    if not servicio_sheets or not str(num_guia).strip() or str(num_guia).strip() == "S/N": return False
+    try:
+        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        v = r.get('values', [])
+        
+        hora_lima = datetime.utcnow() - timedelta(hours=5)
+        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M')}"
+        
+        for i, fila in enumerate(v):
+            if len(fila) > 1 and str(fila[1]).strip().upper() == str(num_guia).strip().upper():
+                fila_excel = i + 2
+                body = {"values": [[marca]]}
+                servicio_sheets.spreadsheets().values().update(
+                    spreadsheetId=ID_SHEET_GUIAS,
+                    range=f"'Guias_recibidas'!H{fila_excel}",
+                    valueInputOption="USER_ENTERED",
+                    body=body
+                ).execute()
+        return True
+    except Exception as e:
+        print(f"Error actualizando marca de control {num_guia}: {e}")
+        return False
+
 def obtener_usuarios_roles():
     """Descarga los roles de usuario desde la hoja 'Usuario_Roles'."""
     from src.services.google_service import obtener_servicios

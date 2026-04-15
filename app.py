@@ -16,8 +16,7 @@ from src.services.google_service import (
     obtener_servicios, subir_a_drive, obtener_plantilla_drive, 
     subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
     obtener_datos_empresas_desde_sheets, registrar_en_control,
-    leer_sheet_seguro,
-    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias
+    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -466,7 +465,7 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
         if "Comercialización" in tipo_flujo:
             cliente_crudo_tmp = grl.get('cliente') or grl.get('razon_social') or grl.get('empresa') or ""
             cliente_ocr_tmp = str(cliente_crudo_tmp).upper() if cliente_crudo_tmp else ""
-            if str(cliente_ocr_tmp).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]:
+            if str(cliente_ocr_tmp).strip().lower() in ["prosembra s.a.c.", "prosembra", "agrícola villa curi", "agricola villa curi", "villa curi", "los olivos de villa curi"]:
                 st.info("📅 REGLA ESPECIAL (HOY)")
                 f_calc = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
             else:
@@ -717,7 +716,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             else:
                                 carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
                                 link_drive = subir_a_drive(final_bytes, nombre_archivo_final, tipo_flujo, carpeta_id=carpeta_exacta)
-                                val_cert = tipo_flujo
+                                val_cert = str(tipo_flujo).upper()
                                 
                             link_final = link_drive if link_drive else "Error de Permisos en Drive"
                             fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
@@ -730,13 +729,8 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             
                             if link_drive:
                                 st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
-                                
-                            if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
                                 _, sht_drv = obtener_servicios()
-                                for r in st.session_state['guias_repo']:
-                                    if r['nombre'] == str(archivo):
-                                        actualizar_bitacora_guias(sht_drv, [r['fila']])
-                                        break
+                                buscar_actualizar_guia(sht_drv, str(archivo).upper())
                             
                         except Exception as e:
                             fallidos.append((archivo, str(e)))
@@ -899,7 +893,7 @@ if st.session_state.get('generado'):
             if es_modelo:
                 val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
             else:
-                val_cert = tipo_flujo
+                val_cert = str(tipo_flujo).upper()
                         
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
             if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
@@ -933,11 +927,14 @@ if st.session_state.get('generado'):
                     st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
                     
                     # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
+                    _, sht_serv = obtener_servicios()
+                    if num_certificadas > 0:
+                        for g_str in guias_lista:
+                            buscar_actualizar_guia(sht_serv, g_str)
+                    elif val_guia_completa:
+                        buscar_actualizar_guia(sht_serv, val_guia_completa)
+                    
                     if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
-                        _, sht_serv = obtener_servicios()
-                        filas = [g['fila'] for g in st.session_state['guias_repo']]
-                        if actualizar_bitacora_guias(sht_serv, filas):
-                            st.info("✅ Bitácora de repositorio masivo (Columna H) actualizada.")
                         del st.session_state['guias_repo'] # Limpiar sesión
                         
                     st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
