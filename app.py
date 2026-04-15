@@ -613,7 +613,7 @@ v_cli_seguro = locals().get('v_cli', '')
 v_ruc_seguro = locals().get('v_ruc_c', '')
 v_df_seguro = locals().get('v_items_df', None)
 
-if str(v_cli_seguro).strip() != "" and str(v_ruc_seguro).strip() != "" and v_df_seguro is not None and not v_df_seguro.empty:
+if v_df_seguro is not None and not v_df_seguro.empty:
 
     modalidad_gen = st.radio("Modalidad de Generación", [
         "Agrupada (1 Certificado para todas las guías)", 
