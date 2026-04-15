@@ -217,19 +217,12 @@ with st.sidebar:
     st.divider() # <--- Aquí ya no habrá error
     
     if st.sidebar.button("Limpiar Sesión", use_container_width=True):
-        # 1. Borramos SOLO las variables del certificado actual (dejando vivo a 'repo')
-        llaves_basura = ['ocr_data', 'df_items', 'word_buffer', 'nombre_generado', 'generado']
-        for k in llaves_basura:
-            if k in st.session_state:
+        llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
+        for k in list(st.session_state.keys()):
+            if k not in llaves_protegidas:
                 del st.session_state[k]
         
-        # 2. Truco de magia: Le cambiamos el DNI al file_uploader para que nazca vacío
-        if 'uploader_key' not in st.session_state:
-            st.session_state.uploader_key = 1
-        else:
-            st.session_state.uploader_key += 1
-            
-        # 3. Recargamos la pantalla suavemente
+        st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
         st.rerun()
 
     # Renderizado Quirúrgico Basado en RBAC
@@ -638,12 +631,16 @@ def inyectar_estado_sheets_robusto(numero_de_guia):
         col_guias = r.get('values', [])
         
         fila_encontrada = None
-        guia_buscar_clean = str(numero_de_guia).strip().lower()
+        import re
+        guia_clean_alnum = re.sub(r'[^a-zA-Z0-9]', '', str(numero_de_guia).lower())
         
         for i, val in enumerate(col_guias):
-            if val and len(val) > 0 and str(val[0]).strip().lower() == guia_buscar_clean:
-                fila_encontrada = i + 1
-                break
+            if val and len(val) > 0:
+                celda_alnum = re.sub(r'[^a-zA-Z0-9]', '', str(val[0]).lower())
+                # Búsqueda súper robusta: si coinciden alfanuméricamente o si uno contiene al otro
+                if celda_alnum == guia_clean_alnum or (len(guia_clean_alnum) > 4 and guia_clean_alnum in celda_alnum) or (len(celda_alnum) > 4 and celda_alnum in guia_clean_alnum):
+                    fila_encontrada = i + 1
+                    break
                 
         if fila_encontrada:
             body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y %H:%M')}"]]}
@@ -652,10 +649,10 @@ def inyectar_estado_sheets_robusto(numero_de_guia):
                 valueInputOption="USER_ENTERED", body=body
             ).execute()
         else:
-            print(f"Número de guía {numero_de_guia} no encontrado en la hoja {target_ws_title}.")
+            st.warning(f"⚠️ Sheets: No se encontró la guía '{numero_de_guia}' en la columna B de '{target_ws_title}'.")
             
     except Exception as e:
-        print(f"Error crítico en Sheets al procesar guía {numero_de_guia}: {e}")
+        st.error(f"❌ Error API Sheets con guía {numero_de_guia}: {str(e)}")
 
 if 'msg_generado' not in st.session_state: st.session_state.msg_generado = False
 if 'msg_descargado' not in st.session_state: st.session_state.msg_descargado = False
