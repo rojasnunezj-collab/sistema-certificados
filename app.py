@@ -282,10 +282,18 @@ if not modo_manual:
                     
             if st.session_state.get('guias_repo'):
                 opciones_nombres = [r['nombre'] for r in st.session_state['guias_repo']]
+                
+                def fmt_guia(nombre):
+                    for r in st.session_state.get('guias_repo', []):
+                        if r['nombre'] == nombre:
+                            return r.get('numero_guia', nombre)
+                    return nombre
+
                 archivos_seleccionados_usuario = st.multiselect(
                     "Filtro: Selecciona Guías a Procesar", 
                     options=opciones_nombres, 
-                    default=opciones_nombres
+                    default=opciones_nombres,
+                    format_func=fmt_guia
                 )
                 
                 if not archivos_seleccionados_usuario:
@@ -456,8 +464,12 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
     # --- Magia Robusta: Selección automática forzada (CORREGIDO) ---
     with c2:
         if "Comercialización" in tipo_flujo:
-            st.info("📅 COMERCIALIZACIÓN (FIN DE MES)")
-            f_calc = obtener_fin_de_mes(fecha_base)
+            if str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]:
+                st.info("📅 REGLA ESPECIAL (HOY)")
+                f_calc = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
+            else:
+                st.info("📅 COMERCIALIZACIÓN (FIN DE MES)")
+                f_calc = obtener_fin_de_mes(fecha_base)
             tipo_op = "Comercialización"
             v_fec_emis = st.text_input("F. Emisión", value=f_calc)
         else:
@@ -627,10 +639,14 @@ v_df_seguro = locals().get('v_items_df', None)
 
 if v_df_seguro is not None and not v_df_seguro.empty:
 
-    modalidad_gen = st.radio("Modalidad de Generación", [
-        "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)", 
-        "Individual (Crear un certificado separado por cada guía seleccionada)"
-    ])
+    guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+    if len(guias_unicas_prev) > 1:
+        modalidad_gen = st.radio("Modalidad de Generación", [
+            "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)", 
+            "Individual (Crear un certificado separado por cada guía seleccionada)"
+        ])
+    else:
+        modalidad_gen = "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)"
     
     # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
     if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):

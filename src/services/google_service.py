@@ -442,7 +442,8 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
                 # Coincidir con los filtros y que no contenga marca de 'Nuevo' procesado
                 if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and f_archivo:
                     if "✅ Nuevo" not in bitacora:
-                        resultados.append({"nombre": f_archivo, "fila": fila_real})
+                        numero_guia = str(fila[1]).strip() if len(fila) > 1 else "S/N"
+                        resultados.append({"nombre": f_archivo, "fila": fila_real, "numero_guia": numero_guia})
         return resultados
     except Exception as e:
         print(f"Error buscar guias: {e}")
