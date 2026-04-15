@@ -615,19 +615,32 @@ v_df_seguro = locals().get('v_items_df', None)
 
 if v_df_seguro is not None and not v_df_seguro.empty:
 
+    todas_guias = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+    if not todas_guias: todas_guias = ["S/N"]
+    
+    archivos_seleccionados_usuario = st.multiselect(
+        "Filtro: Selecciona Guías a Procesar",
+        options=todas_guias,
+        default=todas_guias
+    )
+    
+    if not archivos_seleccionados_usuario:
+        st.warning("⚠️ Debe seleccionar al menos una guía para continuar.")
+        st.stop()
+
     modalidad_gen = st.radio("Modalidad de Generación", [
-        "Agrupada (1 Certificado para todas las guías)", 
-        "Individual (1 Certificado por cada guía)"
+        "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)", 
+        "Individual (Crear un certificado separado por cada guía seleccionada)"
     ])
     
     # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
     if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
+        st.session_state['guias_agrupadas_seleccionadas'] = archivos_seleccionados_usuario
         drive, _ = obtener_servicios()
         if drive:
             try:
                 if "Individual" in modalidad_gen:
-                    guias_unicas = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
-                    if not guias_unicas: guias_unicas = ["S/N"]
+                    guias_unicas = archivos_seleccionados_usuario
                     
                     corr_actual_int = int(str(v_corr).strip() or 1)
                     progreso = st.progress(0)
@@ -763,7 +776,8 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                 buf_tpl = io.BytesIO()
                 doc.save(buf_tpl)
                 
-                items_para_tabla = v_items_df.to_dict('records')
+                df_procesar = v_items_df[v_items_df['guia_origen'].isin(archivos_seleccionados_usuario)] if archivos_seleccionados_usuario != ["S/N"] else v_items_df
+                items_para_tabla = df_procesar.to_dict('records')
                 final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
 
 
@@ -860,7 +874,11 @@ if st.session_state.get('generado'):
                         
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
             if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
-                guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+                g_sel = st.session_state.get('guias_agrupadas_seleccionadas')
+                if g_sel and g_sel != ["S/N"]:
+                    guias_lista = [str(g).strip().upper() for g in g_sel]
+                else:
+                    guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
                 val_guia_completa = ", ".join(guias_lista)
                 num_certificadas = len(guias_lista)
             else:
