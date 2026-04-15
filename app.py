@@ -624,6 +624,47 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
 # ====================================================================
 st.divider()
 
+def inyectar_estado_sheets_robusto(numero_de_guia):
+    # Actualización robusta de estado en Sheets
+    try:
+        from zoneinfo import ZoneInfo
+        from src.config.settings import ID_SHEET_REPOSITORIO
+        from src.services.google_service import obtener_servicios
+        
+        _, sht_drv = obtener_servicios()
+        sheet_metadata = sht_drv.spreadsheets().get(spreadsheetId=ID_SHEET_REPOSITORIO).execute()
+        target_ws_title = None
+        for sheet in sheet_metadata.get('sheets', []):
+            title = sheet.get("properties", {}).get("title", "")
+            if title.lower().replace(" ", "").replace("_", "") == "guiasrecibidas":
+                target_ws_title = title
+                break
+                
+        if target_ws_title:
+            r = sht_drv.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!B:B").execute()
+            col_guias = r.get('values', [])
+            
+            fila_encontrada = None
+            guia_buscar_clean = str(numero_de_guia).strip().lower()
+            
+            for i, val in enumerate(col_guias):
+                if val and len(val) > 0 and str(val[0]).strip().lower() == guia_buscar_clean:
+                    fila_encontrada = i + 1
+                    break
+                    
+            if fila_encontrada:
+                body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y %H:%M')}"]]}
+                sht_drv.spreadsheets().values().update(
+                    spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!H{fila_encontrada}",
+                    valueInputOption="USER_ENTERED", body=body
+                ).execute()
+            else:
+                print(f"Número de guía {numero_de_guia} no encontrado en la hoja {target_ws_title}.")
+        else:
+            print("Pestaña 'guias recibidas' no encontrada.")
+    except Exception as e:
+        print(f"Error crítico en Sheets: {e}")
+
 if 'msg_generado' not in st.session_state: st.session_state.msg_generado = False
 if 'msg_descargado' not in st.session_state: st.session_state.msg_descargado = False
 
@@ -731,8 +772,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             
                             if link_drive:
                                 st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
-                                _, sht_drv = obtener_servicios()
-                                buscar_actualizar_guia(sht_drv, str(archivo).upper())
+                                inyectar_estado_sheets_robusto(str(archivo).upper())
                             
                         except Exception as e:
                             fallidos.append((archivo, str(e)))
@@ -929,12 +969,11 @@ if st.session_state.get('generado'):
                     st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
                     
                     # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
-                    _, sht_serv = obtener_servicios()
                     if num_certificadas > 0:
                         for g_str in guias_lista:
-                            buscar_actualizar_guia(sht_serv, g_str)
+                            inyectar_estado_sheets_robusto(g_str)
                     elif val_guia_completa:
-                        buscar_actualizar_guia(sht_serv, val_guia_completa)
+                        inyectar_estado_sheets_robusto(val_guia_completa)
                     
                     if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
                         del st.session_state['guias_repo'] # Limpiar sesión
