@@ -482,10 +482,11 @@ def descargar_guias_drive(servicio_drive, nombres_archivos):
 
 def actualizar_bitacora_guias(servicio_sheets, filas):
     """Actualiza la columna H de las filas iteradas en un Batch Update."""
-    from datetime import datetime
+    from datetime import datetime, timedelta
     if not servicio_sheets or not filas: return False
     try:
-        marca = f"✅ Nuevo: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        hora_lima = datetime.utcnow() - timedelta(hours=5)
+        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M')}"
         
         data = []
         for fila in filas:

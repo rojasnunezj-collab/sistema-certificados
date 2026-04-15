@@ -717,7 +717,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             else:
                                 carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
                                 link_drive = subir_a_drive(final_bytes, nombre_archivo_final, tipo_flujo, carpeta_id=carpeta_exacta)
-                                val_cert = nombre_archivo_final
+                                val_cert = tipo_flujo
                                 
                             link_final = link_drive if link_drive else "Error de Permisos en Drive"
                             fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
@@ -727,6 +727,16 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             corr_actual_int += 1
                             exitosos.append(nombre_archivo_final)
                             st.session_state['metricas_exitosos'] += 1
+                            
+                            if link_drive:
+                                st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
+                                
+                            if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
+                                _, sht_drv = obtener_servicios()
+                                for r in st.session_state['guias_repo']:
+                                    if r['nombre'] == str(archivo):
+                                        actualizar_bitacora_guias(sht_drv, [r['fila']])
+                                        break
                             
                         except Exception as e:
                             fallidos.append((archivo, str(e)))
@@ -745,6 +755,9 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             for f_arch, f_err in fallidos:
                                 st.write(f"- **Guía {f_arch}**: {f_err}")
                                 
+                    if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
+                        del st.session_state['guias_repo']
+                        
                     st.info("El lote de certificados individuales finalizó.")
                     st.stop()
                 if es_modelo:
@@ -886,7 +899,7 @@ if st.session_state.get('generado'):
             if es_modelo:
                 val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
             else:
-                val_cert = nombre_archivo_final
+                val_cert = tipo_flujo
                         
             # --- 1. Lógica para capturar MÚLTIPLES guías ---
             if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
@@ -927,7 +940,7 @@ if st.session_state.get('generado'):
                             st.info("✅ Bitácora de repositorio masivo (Columna H) actualizada.")
                         del st.session_state['guias_repo'] # Limpiar sesión
                         
-                    st.markdown(f"[🔗 Clic aquí para ver el documento en Drive]({link_drive})")
+                    st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
                     
                     st.cache_data.clear() 
                 else:
