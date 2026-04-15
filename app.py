@@ -464,7 +464,9 @@ if 'ocr_data' in st.session_state and 'df_items' in st.session_state:
     # --- Magia Robusta: Selección automática forzada (CORREGIDO) ---
     with c2:
         if "Comercialización" in tipo_flujo:
-            if str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]:
+            cliente_crudo_tmp = grl.get('cliente') or grl.get('razon_social') or grl.get('empresa') or ""
+            cliente_ocr_tmp = str(cliente_crudo_tmp).upper() if cliente_crudo_tmp else ""
+            if str(cliente_ocr_tmp).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]:
                 st.info("📅 REGLA ESPECIAL (HOY)")
                 f_calc = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
             else:
@@ -691,7 +693,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                                 "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
                                 "DIRECCION_LLEGADA": v_llegada, "LLEGADA": v_llegada,
                                 "EMPRESA_2": emisor_nombre,
-                                "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
+                                "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(v_cli).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
                                 "DESTINATARIO_FINAL": emisor_nombre, "EMPRESA": emisor_nombre, 
                                 "RUC_EMPRESA": emisor_ruc, "RUC": emisor_ruc,
                                 "EMISOR": emisor_nombre, "RUC_EMISOR": emisor_ruc        
@@ -775,7 +777,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                     "DIRECCION_LLEGADA": v_llegada, 
                     "LLEGADA": v_llegada,
                     "EMPRESA_2": emisor_nombre,
-                    "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(empresa_firma).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
+                    "FECHA_EMISION": datetime.now().strftime("%d/%m/%Y") if (str(v_cli).strip().lower() in ["prosembra", "villa curi", "los olivos de villa curi"]) and ("comercializaci" in str(tipo_flujo).strip().lower()) else v_fec_emis,
                     "DESTINATARIO_FINAL": emisor_nombre,
                     
                     # --- VARIABLES PARA PLANTILLAS NORMALES ---

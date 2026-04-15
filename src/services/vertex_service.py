@@ -68,7 +68,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
     
     ESTRUCTURA JSON EXACTA Y REGLAS DE NEGOCIO OBLIGATORIAS:
     {
-        "cliente": "Razón Social exacta del Remitente o Cliente Emisor.",
+        "cliente": "Razón Social exacta del REMITENTE. Regla Estricta: NO extraer la empresa de transportes, NO extraer nombres de conductores.",
         "ruc_cliente": "Número de RUC del Remitente o Cliente Emisor.",
         "fecha": "dd/mm/yyyy", 
         "serie": "Serie-Numero completo de la guía. Ejemplo: T001-000000", 
