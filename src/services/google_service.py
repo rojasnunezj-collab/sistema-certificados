@@ -413,7 +413,7 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
     """Filtra y devuelve archivos a descargar, validando que no estén procesados."""
     if not servicio_sheets: return []
     try:
-        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:H").execute()
         v = r.get('values', [])
         
         resultados = []
@@ -499,7 +499,7 @@ def actualizar_bitacora_guias(servicio_sheets, filas):
             "valueInputOption": "USER_ENTERED",
             "data": data
         }
-        servicio_sheets.spreadsheets().values().batchUpdate(spreadsheetId=ID_SHEET_GUIAS, body=body).execute()
+        servicio_sheets.spreadsheets().values().batchUpdate(spreadsheetId=ID_SHEET_REPOSITORIO, body=body).execute()
         return True
     except Exception as e:
         print(f"Error actualizando bitácora: {e}")
@@ -509,7 +509,7 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
     from datetime import datetime, timedelta
     if not servicio_sheets or not str(num_guia).strip() or str(num_guia).strip() == "S/N": return False
     try:
-        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:H").execute()
         v = r.get('values', [])
         
         hora_lima = datetime.utcnow() - timedelta(hours=5)
@@ -520,7 +520,7 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
                 fila_excel = i + 2
                 body = {"values": [[marca]]}
                 servicio_sheets.spreadsheets().values().update(
-                    spreadsheetId=ID_SHEET_GUIAS,
+                    spreadsheetId=ID_SHEET_REPOSITORIO,
                     range=f"'Guias_recibidas'!H{fila_excel}",
                     valueInputOption="USER_ENTERED",
                     body=body
