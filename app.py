@@ -632,13 +632,17 @@ def inyectar_estado_sheets_robusto(numero_de_guia):
         
         fila_encontrada = None
         import re
-        guia_clean_alnum = re.sub(r'[^a-zA-Z0-9]', '', str(numero_de_guia).lower())
+        
+        def norm_g(s):
+            t = re.sub(r'(?i)[nº°\s_]', '', str(s)).lower()
+            return "".join([p.lstrip('0') if p.isdigit() else p for p in re.findall(r'[a-z]+|[0-9]+', t)])
+
+        guia_clean = norm_g(numero_de_guia)
         
         for i, val in enumerate(col_guias):
             if val and len(val) > 0:
-                celda_alnum = re.sub(r'[^a-zA-Z0-9]', '', str(val[0]).lower())
-                # Búsqueda súper robusta: si coinciden alfanuméricamente o si uno contiene al otro
-                if celda_alnum == guia_clean_alnum or (len(guia_clean_alnum) > 4 and guia_clean_alnum in celda_alnum) or (len(celda_alnum) > 4 and celda_alnum in guia_clean_alnum):
+                celda_clean = norm_g(val[0])
+                if celda_clean == guia_clean or (len(guia_clean) >= 4 and guia_clean in celda_clean):
                     fila_encontrada = i + 1
                     break
                 
