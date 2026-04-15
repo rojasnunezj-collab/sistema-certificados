@@ -76,8 +76,8 @@ def procesar_guia_ia_vertex(pdf_bytes):
         
         # --- REGLA DE PARTIDA (ESTRICTA) ---
         # PASO 1: Extrae la dirección base de partida.
-        # PASO 2: Busca exhaustivamente en "Observaciones" o resto del texto las palabras: "Fundo", "Planta", "Sede", "Sucursal" o "Predio".
-        # PASO 3: Si encuentras alguna, concatena: "Dirección - [Palabra encontrada + Nombre]". (Ej: "Panamericana Sur Km 280 - Planta Empacadora").
+        # PASO 2: Busca exhaustivamente en "Observaciones" o resto del texto las palabras: "Fundo", "Planta", "Sede", "Sucursal" o "Predio". Identifica y extrae el nombre del fundo. Presta especial atención al fundo "LA ESPERANZA"; si aparece este nombre o algo similar, asígnalo estrictamente al campo Fundo.
+        # PASO 3: Si encuentras alguna, concatena: "Dirección - [Palabra encontrada + Nombre]". (Ej: "Panamericana Sur Km 280 - Fundo La Esperanza").
         # PASO 4: Si y solo si NO hay ninguna de esas palabras en todo el PDF, concatena por defecto: "Dirección - Sede Principal".
         "punto_partida": "Valor final concatenado", 
         

@@ -632,38 +632,30 @@ def inyectar_estado_sheets_robusto(numero_de_guia):
         from src.services.google_service import obtener_servicios
         
         _, sht_drv = obtener_servicios()
-        sheet_metadata = sht_drv.spreadsheets().get(spreadsheetId=ID_SHEET_REPOSITORIO).execute()
-        target_ws_title = None
-        for sheet in sheet_metadata.get('sheets', []):
-            title = sheet.get("properties", {}).get("title", "")
-            if title.lower().replace(" ", "").replace("_", "") == "guiasrecibidas":
-                target_ws_title = title
+        target_ws_title = "Guias_recibidas"
+        
+        r = sht_drv.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!B:B").execute()
+        col_guias = r.get('values', [])
+        
+        fila_encontrada = None
+        guia_buscar_clean = str(numero_de_guia).strip().lower()
+        
+        for i, val in enumerate(col_guias):
+            if val and len(val) > 0 and str(val[0]).strip().lower() == guia_buscar_clean:
+                fila_encontrada = i + 1
                 break
                 
-        if target_ws_title:
-            r = sht_drv.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!B:B").execute()
-            col_guias = r.get('values', [])
-            
-            fila_encontrada = None
-            guia_buscar_clean = str(numero_de_guia).strip().lower()
-            
-            for i, val in enumerate(col_guias):
-                if val and len(val) > 0 and str(val[0]).strip().lower() == guia_buscar_clean:
-                    fila_encontrada = i + 1
-                    break
-                    
-            if fila_encontrada:
-                body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y %H:%M')}"]]}
-                sht_drv.spreadsheets().values().update(
-                    spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!H{fila_encontrada}",
-                    valueInputOption="USER_ENTERED", body=body
-                ).execute()
-            else:
-                print(f"Número de guía {numero_de_guia} no encontrado en la hoja {target_ws_title}.")
+        if fila_encontrada:
+            body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y %H:%M')}"]]}
+            sht_drv.spreadsheets().values().update(
+                spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!H{fila_encontrada}",
+                valueInputOption="USER_ENTERED", body=body
+            ).execute()
         else:
-            print("Pestaña 'guias recibidas' no encontrada.")
+            print(f"Número de guía {numero_de_guia} no encontrado en la hoja {target_ws_title}.")
+            
     except Exception as e:
-        print(f"Error crítico en Sheets: {e}")
+        print(f"Error crítico en Sheets al procesar guía {numero_de_guia}: {e}")
 
 if 'msg_generado' not in st.session_state: st.session_state.msg_generado = False
 if 'msg_descargado' not in st.session_state: st.session_state.msg_descargado = False
