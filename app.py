@@ -755,8 +755,13 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             tipo_cod = "COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER"
                             destino_raw = str(v_partida).split(' - ')[-1].strip()
                             import re
+                            destino_raw = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', destino_raw).strip()
                             destino_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', destino_raw).strip().upper()
                             destino_final = str(v_cli).strip().upper() if not destino_limpio or destino_limpio == "NAN" else destino_limpio
+                            
+                            if ' - ' not in str(v_partida) and len(destino_final.split()) > 1:
+                                destino_final = destino_final.split()[0]
+                                
                             nombre_archivo_final = f"CERT-{tipo_cod}-{corr_str}-{destino_final}"
                             
                             if es_modelo:
@@ -873,12 +878,16 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                 
                 destino_raw = str(v_partida).split(' - ')[-1].strip()
                 import re
+                destino_raw = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', destino_raw).strip()
                 destino_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', destino_raw).strip().upper()
                 
                 if not destino_limpio or destino_limpio == "NAN":
                     destino_final = str(v_cli).strip().upper()
                 else:
                     destino_final = destino_limpio
+                    
+                if ' - ' not in str(v_partida) and len(destino_final.split()) > 1:
+                    destino_final = destino_final.split()[0]
                 
                 nombre_archivo_final = f"CERT-{tipo_cod}-{v_corr}-{destino_final}"
                 
