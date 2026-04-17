@@ -327,7 +327,13 @@ if not modo_manual:
                     if not grl: grl = d 
                     s, f, p = d.get('serie','S/N'), d.get('fecha',''), d.get('vehiculo','')
                     for it in d.get('items', []):
-                        it.update({'guia_origen': s, 'fecha_origen': f, 'placa_origen': p})
+                        it.update({
+                            'guia_origen': s, 
+                            'fecha_origen': f, 
+                            'placa_origen': p,
+                            'ocr_partida': d.get('punto_partida', ''),
+                            'ocr_llegada': d.get('punto_llegada', '')
+                        })
                         items.append(it)
                 else: errores += 1
                 prog.progress((i+1)/total)
@@ -338,7 +344,7 @@ if not modo_manual:
                 # AQUÍ GUARDAMOS EN LA CAJA CORRECTA
                 st.session_state['ocr_data'] = grl if grl else {}
                 df = pd.DataFrame(items)
-                for c in ['desc','cant','um','peso','fecha_origen','guia_origen','placa_origen']:
+                for c in ['desc','cant','um','peso','fecha_origen','guia_origen','placa_origen', 'ocr_partida', 'ocr_llegada']:
                     if c not in df.columns: df[c] = ""
                 
                 # --- LIMPIEZA BASE OBLIGATORIA ---
@@ -739,8 +745,10 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                                 "CORRELATIVO": corr_str, "TITULO": v_tit, "REGISTRO": emisor_reg,
                                 "CLIENTE": v_cli, "RUC_CLIENTE": v_ruc_c, "RAZON_SOCIAL_CLIENTE": v_cli,
                                 "SERVICIO_O_COMPRA": v_serv, "TIPO_DE_RESIDUO": v_res,
-                                "PUNTO_PARTIDA": v_partida, "DIRECCION_EMPRESA": v_llegada, 
-                                "DIRECCION_LLEGADA": v_llegada, "LLEGADA": v_llegada,
+                                "PUNTO_PARTIDA": str(df_filtrado['ocr_partida'].iloc[0]) if 'ocr_partida' in df_filtrado.columns and str(df_filtrado['ocr_partida'].iloc[0]).strip() else v_partida,
+                                "DIRECCION_EMPRESA": str(df_filtrado['ocr_llegada'].iloc[0]) if 'ocr_llegada' in df_filtrado.columns and str(df_filtrado['ocr_llegada'].iloc[0]).strip() else v_llegada, 
+                                "DIRECCION_LLEGADA": str(df_filtrado['ocr_llegada'].iloc[0]) if 'ocr_llegada' in df_filtrado.columns and str(df_filtrado['ocr_llegada'].iloc[0]).strip() else v_llegada,
+                                "LLEGADA": str(df_filtrado['ocr_llegada'].iloc[0]) if 'ocr_llegada' in df_filtrado.columns and str(df_filtrado['ocr_llegada'].iloc[0]).strip() else v_llegada,
                                 "EMPRESA_2": emisor_nombre,
                                 "FECHA_EMISION": (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y") if ("PROSEMBRA" in str(v_cli).upper().strip() or "VILLACURI" in str(v_cli).upper().replace(" ", "")) and ("COMERCIALIZACI" in str(tipo_flujo).upper().strip()) else v_fec_emis,
                                 "DESTINATARIO_FINAL": emisor_nombre, "EMPRESA": emisor_nombre, 
@@ -753,7 +761,9 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                             final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), df_filtrado.to_dict('records'))
                             
                             tipo_cod = "COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER"
-                            destino_raw = str(v_partida).split(' - ')[-1].strip()
+                            
+                            val_partida_ctx = str(df_filtrado['ocr_partida'].iloc[0]) if 'ocr_partida' in df_filtrado.columns and str(df_filtrado['ocr_partida'].iloc[0]).strip() else str(v_partida)
+                            destino_raw = val_partida_ctx.split(' - ')[-1].strip()
                             import re
                             destino_raw = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', destino_raw).strip()
                             destino_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', destino_raw).strip().upper()
@@ -953,10 +963,13 @@ if st.session_state.get('generado'):
             link_final = link_drive if link_drive else "Error de Permisos en Drive"
                         
             # --- LÓGICA DE EXTRACCIÓN PARA SHEETS (REPLICADA) ---
-            partes_partida = str(v_partida).split(' - ')
-            nombre_crudo = partes_partida[-1].strip() if len(partes_partida) > 1 else "Sede Principal"
+            nombre_crudo = str(v_partida).split(' - ')[-1].strip()
             import re
+            nombre_crudo = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', nombre_crudo).strip()
             nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
+            
+            if ' - ' not in str(v_partida) and len(nombre_limpio.split()) > 1:
+                nombre_limpio = nombre_limpio.split()[0]
                         
             from datetime import datetime
             val_empresa = str(v_cli).strip().upper()
