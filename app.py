@@ -712,8 +712,22 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                                 fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
                                 doc = DocxTemplate(fh)
                             else:
-                                id_p = PLANTILLAS[empresa_firma][tipo_flujo]
-                                req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                                try:
+                                    import re
+                                    tipo_flujo_limpio = re.sub(r'\s+\d+$', '', str(tipo_flujo).strip()).strip()
+                                    id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
+                                except KeyError:
+                                    st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
+                                    st.stop()
+                                
+                                f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
+                                m_type = f_meta.get('mimeType', '')
+                                
+                                if m_type == 'application/vnd.google-apps.document':
+                                    req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                                else:
+                                    req = drive.files().get_media(fileId=id_p)
+                                    
                                 fh = io.BytesIO()
                                 from googleapiclient.http import MediaIoBaseDownload
                                 dl = MediaIoBaseDownload(fh, req)
@@ -794,8 +808,22 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                     fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
                     doc = DocxTemplate(fh)
                 else:
-                    id_p = PLANTILLAS[empresa_firma][tipo_flujo]
-                    req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                    try:
+                        import re
+                        tipo_flujo_limpio = re.sub(r'\s+\d+$', '', str(tipo_flujo).strip()).strip()
+                        id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
+                    except KeyError:
+                        st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
+                        st.stop()
+                    
+                    f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
+                    m_type = f_meta.get('mimeType', '')
+                    
+                    if m_type == 'application/vnd.google-apps.document':
+                        req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                    else:
+                        req = drive.files().get_media(fileId=id_p)
+                        
                     fh = io.BytesIO()
                     from googleapiclient.http import MediaIoBaseDownload
                     dl = MediaIoBaseDownload(fh, req)
