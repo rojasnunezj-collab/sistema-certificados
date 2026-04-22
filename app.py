@@ -1000,7 +1000,8 @@ if st.session_state.get('generado'):
             )
 
             # --- 2. Fecha y armado de datos para Sheets ---
-            fecha_registro = datetime.now().strftime("%d/%m/%Y")
+            from datetime import datetime, timedelta
+            fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
             datos_log = [fecha_registro, val_empresa, val_fundo, v_corr, val_cert, val_guia_completa, "", link_final, "", ""]
                         
             if registrar_en_control(datos_log):
