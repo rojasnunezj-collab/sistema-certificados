@@ -251,7 +251,9 @@ if not modo_manual:
         drv, sht = obtener_servicios()
         cat = obtener_catalogo_guias(sht) if sht else {}
         
-        if cat:
+        if not cat:
+            st.info("✅ ¡Todo está al día! No hay certificados pendientes por generar en el repositorio.")
+        else:
             c1, c2, c3 = st.columns(3)
             # Caja 1: Empresa
             r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...", key="repo_empresa")
@@ -306,9 +308,11 @@ if not modo_manual:
     else:
         archivos = st.session_state.get('archivos_mock', None)
 
-    if archivos is not None:
-        if len(archivos) == 0:
-            st.error("❌ Drive rechazó la búsqueda. El archivo no existe o tiene una extensión oculta/diferente.")
+    # Mostrar error solo si el repositorio intentó descargar y devolvió vacío
+    if repositorio_masivo and isinstance(archivos, list) and len(archivos) == 0:
+        st.error("❌ Drive rechazó la búsqueda. El archivo no existe o tiene una extensión oculta/diferente.")
+
+    if archivos:
         ejecutar_ocr = False
         if not repositorio_masivo and st.button("🔍 Procesar"):
             ejecutar_ocr = True
