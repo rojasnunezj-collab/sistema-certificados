@@ -379,6 +379,11 @@ def obtener_catalogo_guias(_servicio_sheets):
                 fecha_str = str(fila[0]).strip()
                 empresa = str(fila[3]).strip()
                 fundo = str(fila[4]).strip()
+                bitacora = str(fila[7]).strip() if len(fila) > 7 else ""
+                
+                # REGLA ESTRICTA: Filtrar lo que ya fue generado
+                if "✅ Nuevo" in bitacora:
+                    continue
                 
                 mes_formateado = "Sin Fecha"
                 # Parseo manual de fecha DD/MM/YYYY o M/D/YYYY
@@ -460,7 +465,7 @@ def descargar_guias_drive(servicio_drive, nombres_archivos):
     for nombre in nombres_archivos:
         query = f"(name = '{nombre}' or name = '{nombre}.pdf') and trashed=false"
         try:
-            res = servicio_drive.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+            res = servicio_drive.files().list(q=query, spaces='drive', includeItemsFromAllDrives=True, supportsAllDrives=True, fields='files(id, name)').execute()
             items = res.get('files', [])
             if items:
                 archivo_id = items[0]['id']

@@ -254,15 +254,15 @@ if not modo_manual:
         if cat:
             c1, c2, c3 = st.columns(3)
             # Caja 1: Empresa
-            r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...")
+            r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...", key="repo_empresa")
             
             # Caja 2: Mes
             opciones_mes = list(cat.get(r_empresa, {}).keys()) if r_empresa else []
-            r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa)
+            r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa, key="repo_mes")
             
             # Caja 3: Fundo
             opciones_fundo = cat.get(r_empresa, {}).get(r_mes, []) if r_mes else []
-            r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes)
+            r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes, key="repo_fundo")
             
             if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes)):
                 res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes)
@@ -306,7 +306,9 @@ if not modo_manual:
     else:
         archivos = st.session_state.get('archivos_mock', None)
 
-    if archivos:
+    if archivos is not None:
+        if len(archivos) == 0:
+            st.error("❌ Drive rechazó la búsqueda. El archivo no existe o tiene una extensión oculta/diferente.")
         ejecutar_ocr = False
         if not repositorio_masivo and st.button("🔍 Procesar"):
             ejecutar_ocr = True
