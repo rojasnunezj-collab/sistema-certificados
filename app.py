@@ -725,8 +725,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                                 doc = DocxTemplate(fh)
                             else:
                                 try:
-                                    import re
-                                    tipo_flujo_limpio = re.sub(r'\s+\d+$', '', str(tipo_flujo).strip()).strip()
+                                    tipo_flujo_limpio = str(tipo_flujo).strip()
                                     id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
                                 except KeyError:
                                     st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
@@ -830,8 +829,7 @@ if v_df_seguro is not None and not v_df_seguro.empty:
                     doc = DocxTemplate(fh)
                 else:
                     try:
-                        import re
-                        tipo_flujo_limpio = re.sub(r'\s+\d+$', '', str(tipo_flujo).strip()).strip()
+                        tipo_flujo_limpio = str(tipo_flujo).strip()
                         id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
                     except KeyError:
                         st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
