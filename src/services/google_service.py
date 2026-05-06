@@ -463,9 +463,17 @@ def descargar_guias_drive(servicio_drive, nombres_archivos):
     
     archivos_memoria = []
     for nombre in nombres_archivos:
-        query = f"(name = '{nombre}' or name = '{nombre}.pdf') and trashed=false"
+        # Usamos contains para atrapar variaciones o diferentes extensiones (JPG, PNG, PDF, etc)
+        query = f"name contains '{nombre}' and trashed=false"
         try:
-            res = servicio_drive.files().list(q=query, spaces='drive', includeItemsFromAllDrives=True, supportsAllDrives=True, fields='files(id, name)').execute()
+            res = servicio_drive.files().list(
+                q=query, 
+                spaces='drive', 
+                corpora='allDrives',
+                includeItemsFromAllDrives=True, 
+                supportsAllDrives=True, 
+                fields='files(id, name)'
+            ).execute()
             items = res.get('files', [])
             if items:
                 archivo_id = items[0]['id']
