@@ -455,39 +455,64 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
         return []
 
 def descargar_guias_drive(servicio_drive, nombres_archivos):
-    """Busca y descarga los PDFs del Drive, los devuelve en memoria."""
+    """Busca y descarga los archivos del Drive, los devuelve en memoria."""
     import io
+    import re
     from googleapiclient.http import MediaIoBaseDownload
     
     if not servicio_drive or not nombres_archivos: return []
     
     archivos_memoria = []
     for nombre in nombres_archivos:
-        # Usamos contains para atrapar variaciones o diferentes extensiones (JPG, PNG, PDF, etc)
-        query = f"name contains '{nombre}' and trashed=false"
+        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', nombre)
         try:
-            res = servicio_drive.files().list(
-                q=query, 
-                spaces='drive', 
-                corpora='allDrives',
-                includeItemsFromAllDrives=True, 
-                supportsAllDrives=True, 
-                fields='files(id, name)'
-            ).execute()
-            items = res.get('files', [])
-            if items:
-                archivo_id = items[0]['id']
-                req = servicio_drive.files().get_media(fileId=archivo_id)
+            if url_match:
+                archivo_id = url_match.group(1)
+                meta = servicio_drive.files().get(fileId=archivo_id, fields='name, mimeType', supportsAllDrives=True).execute()
+                archivo_name = meta.get('name', 'archivo_descargado')
+                mime_type = meta.get('mimeType', '')
+                
+                # Si es un documento nativo de Google Docs, Sheets, etc, exportarlo
+                if mime_type == 'application/vnd.google-apps.document':
+                    req = servicio_drive.files().export_media(fileId=archivo_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                elif mime_type == 'application/vnd.google-apps.spreadsheet':
+                    req = servicio_drive.files().export_media(fileId=archivo_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                else:
+                    req = servicio_drive.files().get_media(fileId=archivo_id)
+                    
                 fh = io.BytesIO()
                 downloader = MediaIoBaseDownload(fh, req)
                 done = False
                 while not done:
                     status, done = downloader.next_chunk()
                 fh.seek(0)
-                
-                # Mock streamlit file properties
-                fh.name = items[0]['name']
+                fh.name = archivo_name
                 archivos_memoria.append(fh)
+            else:
+                # Usamos contains para atrapar variaciones o diferentes extensiones (JPG, PNG, PDF, etc)
+                query = f"name contains '{nombre}' and trashed=false"
+                res = servicio_drive.files().list(
+                    q=query, 
+                    spaces='drive', 
+                    corpora='allDrives',
+                    includeItemsFromAllDrives=True, 
+                    supportsAllDrives=True, 
+                    fields='files(id, name)'
+                ).execute()
+                items = res.get('files', [])
+                if items:
+                    archivo_id = items[0]['id']
+                    req = servicio_drive.files().get_media(fileId=archivo_id)
+                    fh = io.BytesIO()
+                    downloader = MediaIoBaseDownload(fh, req)
+                    done = False
+                    while not done:
+                        status, done = downloader.next_chunk()
+                    fh.seek(0)
+                    
+                    # Mock streamlit file properties
+                    fh.name = items[0]['name']
+                    archivos_memoria.append(fh)
         except Exception as e:
             print(f"Error descargando {nombre}: {e}")
             
