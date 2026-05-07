@@ -149,8 +149,8 @@ with st.sidebar:
     st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
     st.divider()
     
-    st.header("Navegación")
-    modulo_actual = st.radio("Módulo Activo", ["Generador de Certificados", "Sigersol (SUNAT)"], label_visibility="collapsed")
+    # st.header eliminado
+    # modulo_actual eliminado
     st.divider()
 
 if 'datos_extraidos' not in st.session_state:
@@ -159,7 +159,9 @@ if 'datos_extraidos' not in st.session_state:
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-if modulo_actual == "Generador de Certificados":
+tab_cert, tab_sigersol = st.tabs(["📄 Generador de Certificados", "🏢 Sigersol"])
+
+with tab_cert:
     # ====================================================================
     # --- BLOQUE 2: UI - Setup Inicial y Sidebar ---
     # ====================================================================
@@ -1037,6 +1039,6 @@ if st.session_state.get('generado'):
             else:
                 st.error("❌ Falló la conexión con Sheets.")
 
-elif modulo_actual == "Sigersol (SUNAT)":
+with tab_sigersol:
     from src.modules.sigersol import render_sigersol
     render_sigersol()
