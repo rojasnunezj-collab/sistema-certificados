@@ -148,6 +148,10 @@ st.session_state['usuario_nombre'] = bd_usuarios[correo_actual].get('Nombre', co
 with st.sidebar:
     st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
     st.divider()
+    
+    st.header("Navegación")
+    modulo_actual = st.radio("Módulo Activo", ["Generador de Certificados", "Sigersol (SUNAT)"], label_visibility="collapsed")
+    st.divider()
 
 if 'datos_extraidos' not in st.session_state:
     st.session_state.datos_extraidos = None
@@ -155,16 +159,15 @@ if 'datos_extraidos' not in st.session_state:
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-if 'uploader_key' not in st.session_state:
-    st.session_state.uploader_key = 0
-# ====================================================================
-# --- BLOQUE 2: UI - Setup Inicial y Sidebar ---
-# ====================================================================
-# --- UI: Encabezado ---
-st.title("📄 Generador de Certificados")
-st.info("Plataforma optimizada con Vertex AI Gemini")
-
-# --- Barra Lateral (Líneas 40 a 100 aprox) ---
+if modulo_actual == "Generador de Certificados":
+    # ====================================================================
+    # --- BLOQUE 2: UI - Setup Inicial y Sidebar ---
+    # ====================================================================
+    # --- UI: Encabezado ---
+    st.title("📄 Generador de Certificados")
+    st.info("Plataforma optimizada con Vertex AI Gemini")
+    
+    # --- Barra Lateral (Líneas 40 a 100 aprox) ---
 with st.sidebar:
     st.header("Configuración de Flujo")
     
@@ -1033,3 +1036,7 @@ if st.session_state.get('generado'):
                     st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
             else:
                 st.error("❌ Falló la conexión con Sheets.")
+
+elif modulo_actual == "Sigersol (SUNAT)":
+    from src.modules.sigersol import render_sigersol
+    render_sigersol()
