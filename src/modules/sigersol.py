@@ -156,7 +156,7 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
     return False
 
 def render_sigersol():
-    st.header("🏢 Módulo Sigersol - Declaración SUNAT")
+    st.header("🏢 Módulo Sigersol")
     st.info("Gestión y migración de guías certificadas hacia la base de datos de SUNAT.")
     
     # --- 1. Filtros ---
@@ -286,11 +286,15 @@ def render_sigersol():
         lista_editor.append({
             "Migrar": False,
             "_excel_row_idx": row_idx,
-            "FECHA": str(row.get(col_fecha, '')),
+            "FECHA": str(row.get(col_fecha, '')), # Columna A
+            "EMPRESA GENERADORA": empresa_gen, # Columna F
+            "REMITENTE": str(row.get('Destinatario/Remitente', '')), # Columna G
+            "PROVEEDOR": str(row.get('Destinario/Proveedor', '')), # Columna H
+            
+            # Campos ocultos o adicionales para SUNAT
             "MES": str(row.get(col_mes, '')),
-            "EMPRESA GENERADORA": empresa_gen,
             "RUC": ruc_gen,
-            "DIRECCION DEL GENERADOR": str(row.get('Destinatario/Remitente', '')), # Origen/Dirección
+            "DIRECCION DEL GENERADOR": str(row.get('Destinatario/Remitente', '')),
             "N° GUIA (SUNAT)": guia_sunat,
             "DESCRIPCION DE RESIDUOS": desc_default,
             "CANTIDAD (Tn)": cant_default,
@@ -301,15 +305,40 @@ def render_sigersol():
     
     st.markdown("### Selecciona las filas a migrar y completa los datos faltantes")
     st.caption("Asegúrate de llenar la Cantidad (Tn) y validar la Descripción de Residuos.")
+    # Definir el orden de las columnas dinámicamente
+    col_order = [
+        "Migrar", 
+        "FECHA", 
+        "MES", 
+        "EMPRESA GENERADORA", 
+        "RUC", 
+        "DIRECCION DEL GENERADOR", 
+        "N° GUIA (SUNAT)", 
+        "DESCRIPCION DE RESIDUOS", 
+        "CANTIDAD (Tn)", 
+        "DESTINO FINAL"
+    ]
     
+    if empresa_sel.strip().upper() == "PROSEMBRA S.A.C.":
+        col_order = [
+            "Migrar", 
+            "FECHA", 
+            "EMPRESA GENERADORA", 
+            "REMITENTE", 
+            "PROVEEDOR", 
+            "CANTIDAD (Tn)", 
+            "DESCRIPCION DE RESIDUOS"
+        ]
+
     # Configuramos el editor
     edited_df = st.data_editor(
         df_editor,
+        column_order=col_order,
         column_config={
             "Migrar": st.column_config.CheckboxColumn("Migrar", default=False),
             "_excel_row_idx": None, # Ocultamos la columna del ID
         },
-        disabled=["_excel_row_idx", "FECHA", "MES", "N° GUIA (SUNAT)"], # Bloqueamos campos que no deberian alterarse
+        disabled=["_excel_row_idx", "FECHA", "MES", "N° GUIA (SUNAT)", "EMPRESA GENERADORA", "REMITENTE", "PROVEEDOR"], # Bloqueamos campos que no deberian alterarse
         use_container_width=True,
         hide_index=True
     )
