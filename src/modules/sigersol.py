@@ -145,11 +145,15 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
             valores_a_insertar.append(fila)
             
         if valores_a_insertar:
-            sheets.spreadsheets().values().append(
+            # Encontrar la primera fila vacía leyendo la columna B (Fecha)
+            r = sheets.spreadsheets().values().get(spreadsheetId=ID_DESTINO_SUNAT, range=f"'{nombre_pestana}'!B:B").execute()
+            next_row = len(r.get('values', [])) + 1
+            if next_row < 2: next_row = 2
+            
+            sheets.spreadsheets().values().update(
                 spreadsheetId=ID_DESTINO_SUNAT,
-                range=f"'{nombre_pestana}'!A:O",
+                range=f"'{nombre_pestana}'!A{next_row}",
                 valueInputOption="USER_ENTERED",
-                insertDataOption="INSERT_ROWS",
                 body={"values": valores_a_insertar}
             ).execute()
             return True
@@ -355,31 +359,49 @@ def render_sigersol():
     if len(filas_a_migrar) > 0:
         st.info(f"Has seleccionado {len(filas_a_migrar)} filas para migrar a SUNAT.")
         
-        # Nombre de la pestaña dinámico
-        emp_clean = str(empresa_sel).strip().upper().replace(" ", "_") if empresa_sel != "Todas" else "VARIOS"
-        if tipo_op == "Comercialización":
-            nombre_pestana = f"COM-{emp_clean}"
-        else:
-            nombre_pestana = f"SERV-{emp_clean}"
-            
-        st.write(f"📂 Pestaña destino: **{nombre_pestana}**")
+        import re
+        def limpiar_razon_social(nombre):
+            limpio = re.sub(r'\b(S\.?A\.?C\.?|S\.?A\.?|S\.?R\.?L\.?|E\.?I\.?R\.?L\.?|S\.?A\.?A\.?)\b', '', str(nombre), flags=re.IGNORECASE)
+            limpio = re.sub(r'[^A-Z0-9\s]', '', limpio.upper())
+            return limpio.strip().replace(" ", "_")
+        
+        # Agrupar por Remitente para crear las pestañas dinámicamente
+        grupos_remitentes = filas_a_migrar.groupby("REMITENTE")
+        
+        # Mostrar resumen de lo que se va a hacer
+        st.write("📂 **Pestañas destino programadas:**")
+        for remitente, _ in grupos_remitentes:
+            emp_clean = limpiar_razon_social(remitente) if remitente else "VARIOS"
+            pestana = f"COM-{emp_clean}" if tipo_op == "Comercialización" else f"SERV-{emp_clean}"
+            st.markdown(f"- `{pestana}`")
         
         if st.button("🚀 Migrar a Sigersol", type="primary", use_container_width=True):
             with st.spinner(f"Migrando {len(filas_a_migrar)} registros a SUNAT..."):
-                exito_migracion = migrar_a_sunat(filas_a_migrar, nombre_pestana)
+                exito_global = True
+                filas_exitosas = []
                 
-                if exito_migracion:
-                    filas_idx = filas_a_migrar['_excel_row_idx'].tolist()
-                    exito_update = actualizar_sigersol_origen(filas_idx)
+                # Migrar grupo por grupo a su pestaña correspondiente
+                for remitente, df_grupo in grupos_remitentes:
+                    emp_clean = limpiar_razon_social(remitente) if remitente else "VARIOS"
+                    nombre_pestana = f"COM-{emp_clean}" if tipo_op == "Comercialización" else f"SERV-{emp_clean}"
                     
+                    if migrar_a_sunat(df_grupo, nombre_pestana):
+                        filas_exitosas.extend(df_grupo['_excel_row_idx'].tolist())
+                    else:
+                        exito_global = False
+                        st.error(f"Error al migrar el bloque de {remitente} hacia la pestaña {nombre_pestana}")
+                
+                if filas_exitosas:
+                    exito_update = actualizar_sigersol_origen(filas_exitosas)
                     if exito_update:
-                        st.success(f"✅ ¡Éxito! Se migraron las guías y se marcó la hoja de origen.")
-                        st.balloons()
-                        # Limpiar cache para forzar recarga
+                        if exito_global:
+                            st.success(f"✅ ¡Éxito! Se migraron todas las guías a sus respectivas pestañas.")
+                            st.balloons()
+                        else:
+                            st.warning("⚠️ Se migraron algunas guías, pero hubo errores con otras.")
                         st.cache_data.clear()
-                        # Usar st.rerun pero con delay si es necesario, aquí no lo haremos para que vean el success
                     else:
                         st.warning("Se migraron a SUNAT, pero falló la actualización del check en la hoja de origen.")
-                else:
-                    st.error("Error al migrar los datos a la hoja destino de SUNAT.")
+                elif not exito_global:
+                    st.error("Error crítico al migrar los datos a las hojas destino de SUNAT.")
 
