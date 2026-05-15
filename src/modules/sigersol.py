@@ -95,7 +95,10 @@ def asegurar_pestana_destino(sheets, nombre_pestana):
             
         return True
     except Exception as e:
-        st.error(f"Error al verificar/crear pestaña '{nombre_pestana}' en destino: {e}")
+        if "must not be an Office file" in str(e):
+            st.error("🚨 **Error de Formato (Excel detectado):** El archivo de SUNAT configurado es un **Excel (.xlsx)**. Google API no permite editarlo directamente.\n\n**SOLUCIÓN:**\n1. Ve a Google Drive y abre ese archivo.\n2. Clic en **Archivo** -> **Guardar como hoja de cálculo de Google**.\n3. Copia el ID del nuevo archivo y actualízalo en el código (`ID_DESTINO_SUNAT`).")
+        else:
+            st.error(f"Error al verificar/crear pestaña '{nombre_pestana}' en destino: {e}")
         return False
 
 def migrar_a_sunat(df_seleccionados, nombre_pestana):
@@ -151,7 +154,10 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
             ).execute()
             return True
     except Exception as e:
-        st.error(f"Error migrando datos a SUNAT: {e}")
+        if "must not be an Office file" in str(e):
+            st.error("🚨 **Error de Formato:** El archivo destino es un Excel (.xlsx) y no una Hoja de Google nativa. Por favor guárdalo como Hoja de Google en Drive primero.")
+        else:
+            st.error(f"Error migrando datos a SUNAT: {e}")
         return False
     return False
 
@@ -188,12 +194,12 @@ def render_sigersol():
         return ""
     
     df_base['Mes_Calculado'] = df_base[col_fecha].apply(get_mes)
-    
-    # Filtrar solo los que están vacíos en la columna N (Mes original de la hoja)
-    if col_mes:
-        df_base = df_base[df_base[col_mes].astype(str).str.strip() == ""]
+    # Filtrar BASE primero por Columna O (Sigersol - Comentarios de exportación)
+    if col_sigersol:
+        mask_pendientes = ~df_base[col_sigersol].astype(str).str.contains("✅ Sigersol", case=False, na=False)
+        df_base = df_base[mask_pendientes].copy()
         
-    # Llenamos opciones (Cajas de selección) restauradas
+    # Llenamos opciones (Cajas de selección) SOLO con lo que queda pendiente
     opciones_meses = ["Todos"] + sorted(list(set([m for m in df_base['Mes_Calculado'] if m])))
     opciones_empresas = ["Todas"] + sorted([str(e) for e in df_base[col_empresa].unique() if str(e).strip()]) if col_empresa else ["Todas"]
     
@@ -201,13 +207,8 @@ def render_sigersol():
     empresa_sel = c2.selectbox("Empresa Principal", options=opciones_empresas)
     tipo_op = c3.radio("Tipo de Operación", options=["Comercialización", "Disposición Final"])
     
-    # --- 2. Lógica de Filtrado ---
-    # Filtrar solo las que NO tengan "✅ Sigersol"
-    if col_sigersol:
-        mask_pendientes = ~df_base[col_sigersol].astype(str).str.contains("✅ Sigersol", case=False, na=False)
-        df_filtrado = df_base[mask_pendientes].copy()
-    else:
-        df_filtrado = df_base.copy()
+    # --- 2. Lógica de Filtrado Secundario (sobre los pendientes) ---
+    df_filtrado = df_base.copy()
         
     if mes_sel != "Todos":
         df_filtrado = df_filtrado[df_filtrado['Mes_Calculado'] == mes_sel]
