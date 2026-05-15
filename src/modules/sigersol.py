@@ -205,9 +205,9 @@ def render_sigersol():
         return ""
     
     df_base['Mes_Calculado'] = df_base[col_fecha].apply(get_mes)
-    # Filtrar BASE primero por Columna O (Sigersol - Comentarios de exportación)
+    # Filtrar BASE primero por Columna O (Sigersol - Comentarios de exportación) VACÍA
     if col_sigersol:
-        mask_pendientes = ~df_base[col_sigersol].astype(str).str.contains("✅ Sigersol", case=False, na=False)
+        mask_pendientes = df_base[col_sigersol].astype(str).str.strip() == ""
         df_base = df_base[mask_pendientes].copy()
         
     # Llenamos opciones (Cajas de selección) SOLO con lo que queda pendiente

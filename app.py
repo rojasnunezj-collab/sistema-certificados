@@ -148,28 +148,6 @@ st.session_state['usuario_nombre'] = bd_usuarios[correo_actual].get('Nombre', co
 with st.sidebar:
     st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
     st.divider()
-    
-    if st.button("Limpiar Sesión Activa", use_container_width=True):
-        llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
-        for k in list(st.session_state.keys()):
-            if k not in llaves_protegidas:
-                del st.session_state[k]
-        st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
-        st.rerun()
-
-    if st.session_state.get('usuario_rol') == 'Admin':
-        st.divider()
-        with st.expander("🛠️ Admin Tools"):
-            st.warning("Controles Elevados")
-            st.markdown("### 📊 Rendimiento de Sesión")
-            col1, col2 = st.columns(2)
-            col1.metric(label="Certificados", value=st.session_state.get('metricas_exitosos', 0), delta="Esta sesión")
-            col2.metric(label="Errores", value=st.session_state.get('metricas_errores', 0), delta="Alertas", delta_color="inverse")
-            st.divider()
-            if st.button("Forzar Purga de Caché GCP", use_container_width=True):
-                st.cache_data.clear()
-                st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
-    st.divider()
 
 if 'datos_extraidos' not in st.session_state:
     st.session_state.datos_extraidos = None
@@ -1035,5 +1013,28 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.error("❌ Falló la conexión con Sheets.")
 
 elif modulo_actual == "🏢 Sigersol":
+    with st.sidebar:
+        st.info("⚙️ Controles de Sigersol")
+        if st.button("Limpiar Sesión Activa", use_container_width=True):
+            llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
+            for k in list(st.session_state.keys()):
+                if k not in llaves_protegidas:
+                    del st.session_state[k]
+            st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+            st.rerun()
+
+        if st.session_state.get('usuario_rol') == 'Admin':
+            st.divider()
+            with st.expander("🛠️ Admin Tools"):
+                st.warning("Controles Elevados")
+                st.markdown("### 📊 Rendimiento de Sesión")
+                col1, col2 = st.columns(2)
+                col1.metric(label="Certificados", value=st.session_state.get('metricas_exitosos', 0), delta="Esta sesión")
+                col2.metric(label="Errores", value=st.session_state.get('metricas_errores', 0), delta="Alertas", delta_color="inverse")
+                st.divider()
+                if st.button("Forzar Purga de Caché GCP", use_container_width=True):
+                    st.cache_data.clear()
+                    st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
+                    
     from src.modules.sigersol import render_sigersol
     render_sigersol()
