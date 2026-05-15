@@ -78,7 +78,6 @@ def procesar_guia_ia_vertex(pdf_bytes):
         
         "punto_llegada": "Dirección Completa exacta de Llegada. IMPORTANTE: Si en el documento (especialmente para la empresa Los Olivos de Villacuri) el destino o planta se indica simplemente como 'EMPACADORA', debes extraer la palabra 'EMPACADORA' y asignarla obligatoriamente a este campo. No lo dejes vacío.", 
         "destinatario": "Razón Social Completa del Destinatario", 
-        "documentos_relacionados": "Si la guía contiene la frase exacta 'Documentos Relacionados:' seguida de información (ej: 'Documentos Relacionados: Guía de Remisión Remitente N° EG07 - 00001221 - RUC N° 20176770474'), extráela completa aquí incluyendo la frase inicial. De lo contrario, déjalo vacío.",
         
         "items": [
             {
@@ -139,4 +138,77 @@ def procesar_guia_ia_vertex(pdf_bytes):
     
     **Último error detectado:** `{errores_acumulados[-1] if errores_acumulados else '404 Model Not Found'}`
     """)
+    return None
+
+def procesar_guia_ia_vertex_sigersol(pdf_bytes):
+    """
+    Procesamiento específico para Sigersol que extrae Documentos Relacionados.
+    """
+    PROJECT_ID = "sistemacertificados-485822"
+    creds = None
+    
+    if "google" in st.secrets:
+        try:
+            creds_info = dict(st.secrets["google"])
+            creds = service_account.Credentials.from_service_account_info(creds_info)
+        except Exception: pass
+
+    if not creds:
+        cred_path = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
+        if cred_path:
+            try: creds = service_account.Credentials.from_service_account_file(cred_path)
+            except Exception: pass
+
+    try: vertexai.init(project=PROJECT_ID, location="us-central1", credentials=creds)
+    except Exception: pass
+
+    regiones = ["us-central1", "us-west1", "us-east4", "southamerica-east1"]
+    modelos_flash = ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"]
+    modelos_pro = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemini-1.5-pro-002"]
+
+    prompt = """
+    INSTRUCCIÓN DE SISTEMA: Eres un extractor de datos OCR estricto. Tu única tarea es extraer datos del PDF adjunto y devolverlos ÚNICAMENTE en formato JSON válido. Tienes PROHIBIDO inventar datos, alucinar información o incluir texto fuera del JSON (como ```json o explicaciones).
+    
+    ESTRUCTURA JSON EXACTA Y REGLAS DE NEGOCIO OBLIGATORIAS:
+    {
+        "cliente": "Razón Social exacta del REMITENTE. Regla Estricta: NO extraer la empresa de transportes, NO extraer nombres de conductores.",
+        "ruc_cliente": "Número de RUC del Remitente o Cliente Emisor.",
+        "fecha": "dd/mm/yyyy", 
+        "serie": "Serie-Numero completo de la guía. Ejemplo: T001-000000", 
+        "vehiculo": "PLACA del vehículo. Busca en todo el documento. Obligatorio.", 
+        
+        "punto_partida": "REGLA DE ORO OBLIGATORIA: Lee primero el bloque 'Observaciones' u 'Observación' de la guía. Todo dato como 'Fundo Casuarinas', 'Planta...', u otro predio que aparezca ahí TIENE QUE SER EXTRAÍDO SÍ O SÍ. Concatena la dirección base de partida con ese dato usando un guion. Ejemplo de Salida Exacta: 'Direccion Base - Fundo Casuarinas' o 'Av Sur - PLANTA EMPACADORA'. Si dice textualmente 'Fundo Casuarinas', debe salir 'Fundo Casuarinas'. NUNCA dejes fuera la información de 'Observaciones'. Si este campo está vacío entonces devuelve solo la dirección de partida base. NUNCA deduzcas ni inventes basándote en la empresa.", 
+        
+        "punto_llegada": "Dirección Completa exacta de Llegada. IMPORTANTE: Si en el documento (especialmente para la empresa Los Olivos de Villacuri) el destino o planta se indica simplemente como 'EMPACADORA', debes extraer la palabra 'EMPACADORA' y asignarla obligatoriamente a este campo. No lo dejes vacío.", 
+        "destinatario": "Razón Social Completa del Destinatario", 
+        "documentos_relacionados": "Si la guía contiene la frase exacta 'Documentos Relacionados:' seguida de información (ej: 'Documentos Relacionados: Guía de Remisión Remitente N° EG07 - 00001221 - RUC N° 20176770474'), extráela completa aquí incluyendo la frase inicial. De lo contrario, déjalo vacío.",
+        
+        "items": [
+            {
+                "desc": "Descripción literal del bien", 
+                "cant": "Número", 
+                "um": "Unidad de medida (KG, UNID, GLN)", 
+                "peso": "Peso numérico explícito (o 0.00 si no existe)"
+            }
+        ]
+    }
+    """
+
+    for region in regiones:
+        try:
+            vertexai.init(project=PROJECT_ID, location=region, credentials=creds)
+            for m_name in modelos_flash + modelos_pro:
+                try:
+                    model = GenerativeModel(m_name)
+                    response = model.generate_content(
+                        [Part.from_data(data=pdf_bytes, mime_type="application/pdf"), prompt],
+                        generation_config=GenerationConfig(response_mime_type="application/json")
+                    )
+                    datos = json.loads(response.text)
+                    if datos.get("destinatario") or len(datos.get("vehiculo", "")) >= 3:
+                        return datos
+                except Exception:
+                    continue
+        except Exception:
+            continue
     return None

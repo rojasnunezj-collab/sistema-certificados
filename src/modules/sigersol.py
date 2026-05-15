@@ -5,7 +5,7 @@ from googleapiclient.discovery import build
 
 from src.config.settings import ID_SHEET_CONTROL
 from src.services.google_service import obtener_servicios, descargar_guias_drive
-from src.services.vertex_service import procesar_guia_ia_vertex
+from src.services.vertex_service import procesar_guia_ia_vertex_sigersol
 from src.utils.format_utils import limpiar_monto, formato_inteligente
 import time
 
@@ -178,9 +178,23 @@ def render_sigersol():
     col_guia_original = 'N° Guía' if 'N° Guía' in df_base.columns else 'N Gua' if 'N Gua' in df_base.columns else df_base.columns[1]
     col_guia_ligada = 'Guía ligada' if 'Guía ligada' in df_base.columns else 'Gua ligada' if 'Gua ligada' in df_base.columns else df_base.columns[2]
     col_guia_hecha = 'Guia hecha' if 'Guia hecha' in df_base.columns else df_base.columns[8] if len(df_base.columns) > 8 else None
+    # --- MES CALCULADO DESDE FECHA ---
+    MESES = {"01": "enero", "02": "febrero", "03": "marzo", "04": "abril", "05": "mayo", "06": "junio", "07": "julio", "08": "agosto", "09": "septiembre", "10": "octubre", "11": "noviembre", "12": "diciembre"}
+    def get_mes(f):
+        try:
+            parts = str(f).strip().split('/')
+            if len(parts) >= 2: return MESES.get(parts[1].zfill(2), "")
+        except: pass
+        return ""
     
-    # Llenamos opciones
-    opciones_meses = ["Todos"] + sorted([str(m) for m in df_base[col_mes].unique() if str(m).strip()]) if col_mes else ["Todos"]
+    df_base['Mes_Calculado'] = df_base[col_fecha].apply(get_mes)
+    
+    # Filtrar solo los que están vacíos en la columna N (Mes original de la hoja)
+    if col_mes:
+        df_base = df_base[df_base[col_mes].astype(str).str.strip() == ""]
+        
+    # Llenamos opciones (Cajas de selección) restauradas
+    opciones_meses = ["Todos"] + sorted(list(set([m for m in df_base['Mes_Calculado'] if m])))
     opciones_empresas = ["Todas"] + sorted([str(e) for e in df_base[col_empresa].unique() if str(e).strip()]) if col_empresa else ["Todas"]
     
     mes_sel = c1.selectbox("Mes de Regularización", options=opciones_meses)
@@ -195,14 +209,8 @@ def render_sigersol():
     else:
         df_filtrado = df_base.copy()
         
-    # EL USUARIO PIDIÓ: Mostrar SOLAMENTE los que están vacíos en la columna del Mes
-    if col_mes:
-        mask_vacios = df_filtrado[col_mes].astype(str).str.strip() == ""
-        df_filtrado = df_filtrado[mask_vacios]
-        
-    if mes_sel != "Todos" and col_mes:
-        # Aunque lo más probable es que mes_sel solo tenga "Todos" si filtramos los vacíos
-        pass
+    if mes_sel != "Todos":
+        df_filtrado = df_filtrado[df_filtrado['Mes_Calculado'] == mes_sel]
         
     if empresa_sel != "Todas" and col_empresa:
         df_filtrado = df_filtrado[df_filtrado[col_empresa].astype(str) == empresa_sel]
@@ -235,8 +243,8 @@ def render_sigersol():
                         if nombre_archivo and nombre_archivo.lower() not in ['nan', 'none', '']:
                             archivos = descargar_guias_drive(drv, [nombre_archivo])
                             if archivos and len(archivos) > 0:
-                                # Llamar a Vertex OCR
-                                data_ia = procesar_guia_ia_vertex(archivos[0].read())
+                                # Llamar a Vertex OCR exclusivo Sigersol
+                                data_ia = procesar_guia_ia_vertex_sigersol(archivos[0].read())
                                 if data_ia and 'items' in data_ia:
                                     suma_peso = 0.0
                                     descripciones = []
@@ -303,7 +311,7 @@ def render_sigersol():
             "PROVEEDOR": str(row.get('Destinario/Proveedor', '')), # Columna H
             
             # Campos ocultos o adicionales para SUNAT
-            "MES": str(row.get(col_mes, '')),
+            "MES": str(row.get('Mes_Calculado', '')).capitalize(),
             "RUC": ruc_gen,
             "DIRECCION DEL GENERADOR": str(row.get('Destinatario/Remitente', '')),
             "N° GUIA (SUNAT)": guia_sunat,
