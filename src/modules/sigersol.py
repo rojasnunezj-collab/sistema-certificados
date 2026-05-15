@@ -285,6 +285,8 @@ def render_sigersol():
                     time.sleep(0.5)
                     progreso.empty()
                     st.success("✅ ¡Extracción completada! La tabla se ha actualizado.")
+                    time.sleep(1)
+                    st.rerun()
         else:
             st.error("No se encontró la columna de 'Guia hecha' para buscar los archivos.")
     

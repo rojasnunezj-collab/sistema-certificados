@@ -149,8 +149,26 @@ with st.sidebar:
     st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
     st.divider()
     
-    # st.header eliminado
-    # modulo_actual eliminado
+    if st.button("Limpiar Sesión Activa", use_container_width=True):
+        llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
+        for k in list(st.session_state.keys()):
+            if k not in llaves_protegidas:
+                del st.session_state[k]
+        st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+        st.rerun()
+
+    if st.session_state.get('usuario_rol') == 'Admin':
+        st.divider()
+        with st.expander("🛠️ Admin Tools"):
+            st.warning("Controles Elevados")
+            st.markdown("### 📊 Rendimiento de Sesión")
+            col1, col2 = st.columns(2)
+            col1.metric(label="Certificados", value=st.session_state.get('metricas_exitosos', 0), delta="Esta sesión")
+            col2.metric(label="Errores", value=st.session_state.get('metricas_errores', 0), delta="Alertas", delta_color="inverse")
+            st.divider()
+            if st.button("Forzar Purga de Caché GCP", use_container_width=True):
+                st.cache_data.clear()
+                st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
     st.divider()
 
 if 'datos_extraidos' not in st.session_state:
@@ -220,33 +238,9 @@ if modulo_actual == "📄 Generador de Certificados":
                 
         tipo_flujo = st.selectbox("Tipo de Certificado", options=opciones_finales)
 
-        st.divider() # <--- Aquí ya no habrá error
-        
-        if st.sidebar.button("Limpiar Sesión", use_container_width=True):
-            llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
-            for k in list(st.session_state.keys()):
-                if k not in llaves_protegidas:
-                    del st.session_state[k]
-            
-            st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
-            st.rerun()
+        st.divider()
 
-        # Renderizado Quirúrgico Basado en RBAC
-        if st.session_state.get('usuario_rol') == 'Admin':
-            st.divider()
-            with st.expander("🛠️ Admin Tools"):
-                st.warning("Controles Elevados")
-                
-                st.markdown("### 📊 Rendimiento de Sesión")
-                col1, col2 = st.columns(2)
-                col1.metric(label="Certificados Generados", value=st.session_state['metricas_exitosos'], delta="Esta sesión")
-                col2.metric(label="Errores Interceptados", value=st.session_state['metricas_errores'], delta="Alertas", delta_color="inverse")
-                st.divider()
-                
-                if st.button("Forzar Purga de Caché GCP", use_container_width=True):
-                    st.cache_data.clear()
-                    st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
-
+if modulo_actual == "📄 Generador de Certificados":
 
     # ====================================================================
     # --- BLOQUE 3: UI - Ingesta y Procesamiento de Archivos ---
