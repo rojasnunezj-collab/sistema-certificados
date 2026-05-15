@@ -78,6 +78,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
         
         "punto_llegada": "Dirección Completa exacta de Llegada. IMPORTANTE: Si en el documento (especialmente para la empresa Los Olivos de Villacuri) el destino o planta se indica simplemente como 'EMPACADORA', debes extraer la palabra 'EMPACADORA' y asignarla obligatoriamente a este campo. No lo dejes vacío.", 
         "destinatario": "Razón Social Completa del Destinatario", 
+        "documentos_relacionados": "Si la guía contiene la frase exacta 'Documentos Relacionados:' seguida de información (ej: 'Documentos Relacionados: Guía de Remisión Remitente N° EG07 - 00001221 - RUC N° 20176770474'), extráela completa aquí incluyendo la frase inicial. De lo contrario, déjalo vacío.",
         
         "items": [
             {

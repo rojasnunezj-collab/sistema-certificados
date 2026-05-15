@@ -195,8 +195,14 @@ def render_sigersol():
     else:
         df_filtrado = df_base.copy()
         
+    # EL USUARIO PIDIÓ: Mostrar SOLAMENTE los que están vacíos en la columna del Mes
+    if col_mes:
+        mask_vacios = df_filtrado[col_mes].astype(str).str.strip() == ""
+        df_filtrado = df_filtrado[mask_vacios]
+        
     if mes_sel != "Todos" and col_mes:
-        df_filtrado = df_filtrado[df_filtrado[col_mes].astype(str) == mes_sel]
+        # Aunque lo más probable es que mes_sel solo tenga "Todos" si filtramos los vacíos
+        pass
         
     if empresa_sel != "Todas" and col_empresa:
         df_filtrado = df_filtrado[df_filtrado[col_empresa].astype(str) == empresa_sel]
@@ -244,6 +250,11 @@ def render_sigersol():
                                             descripciones.append(desc)
                                     
                                     desc_final = " / ".join(set(descripciones)) if descripciones else "RESIDUOS SOLIDOS NO PELIGROSOS"
+                                    
+                                    # Integrar Documentos Relacionados
+                                    doc_rel = str(data_ia.get('documentos_relacionados', '')).strip()
+                                    if doc_rel and doc_rel.upper() not in ["S/D", "NONE", "NULL", ""]:
+                                        desc_final += f" - {doc_rel}"
                                     
                                     st.session_state.sigersol_ia_cache[row_excel_idx] = {
                                         "cantidad": f"{suma_peso:.2f}",
@@ -305,30 +316,16 @@ def render_sigersol():
     
     st.markdown("### Selecciona las filas a migrar y completa los datos faltantes")
     st.caption("Asegúrate de llenar la Cantidad (Tn) y validar la Descripción de Residuos.")
-    # Definir el orden de las columnas dinámicamente
     col_order = [
         "Migrar", 
         "FECHA", 
         "MES", 
-        "EMPRESA GENERADORA", 
-        "RUC", 
-        "DIRECCION DEL GENERADOR", 
         "N° GUIA (SUNAT)", 
+        "REMITENTE", 
+        "PROVEEDOR", 
         "DESCRIPCION DE RESIDUOS", 
-        "CANTIDAD (Tn)", 
-        "DESTINO FINAL"
+        "CANTIDAD (Tn)"
     ]
-    
-    if empresa_sel.strip().upper() == "PROSEMBRA S.A.C.":
-        col_order = [
-            "Migrar", 
-            "FECHA", 
-            "EMPRESA GENERADORA", 
-            "REMITENTE", 
-            "PROVEEDOR", 
-            "CANTIDAD (Tn)", 
-            "DESCRIPCION DE RESIDUOS"
-        ]
 
     # Configuramos el editor
     edited_df = st.data_editor(
@@ -338,7 +335,7 @@ def render_sigersol():
             "Migrar": st.column_config.CheckboxColumn("Migrar", default=False),
             "_excel_row_idx": None, # Ocultamos la columna del ID
         },
-        disabled=["_excel_row_idx", "FECHA", "MES", "N° GUIA (SUNAT)", "EMPRESA GENERADORA", "REMITENTE", "PROVEEDOR"], # Bloqueamos campos que no deberian alterarse
+        disabled=["_excel_row_idx", "FECHA", "N° GUIA (SUNAT)", "REMITENTE", "PROVEEDOR"], # Habilitamos MES para que lo puedan escribir
         use_container_width=True,
         hide_index=True
     )
