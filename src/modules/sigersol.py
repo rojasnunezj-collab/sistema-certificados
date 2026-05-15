@@ -66,34 +66,40 @@ def asegurar_pestana_destino(sheets, nombre_pestana):
         meta = sheets.spreadsheets().get(spreadsheetId=ID_DESTINO_SUNAT).execute()
         pestanas_existentes = [s['properties']['title'] for s in meta.get('sheets', [])]
         
-        if nombre_pestana not in pestanas_existentes:
-            # Crear pestaña
-            req = {
-                "requests": [
-                    {
-                        "addSheet": {
-                            "properties": {
-                                "title": nombre_pestana
-                            }
+        # Check existencias ignorando espacios y mayusculas
+        nombre_limpio = str(nombre_pestana).replace(" ", "").upper()
+        
+        for pestana in pestanas_existentes:
+            if str(pestana).replace(" ", "").upper() == nombre_limpio:
+                return pestana # Retorna el nombre exacto que ya existe en el excel
+                
+        # Crear pestaña si realmente no existe
+        req = {
+            "requests": [
+                {
+                    "addSheet": {
+                        "properties": {
+                            "title": nombre_pestana
                         }
                     }
-                ]
-            }
-            sheets.spreadsheets().batchUpdate(spreadsheetId=ID_DESTINO_SUNAT, body=req).execute()
-            
-            # Inicializar headers si es nueva
-            headers = [
-                ["", "FECHA", "MES", "EMPRESA GENERADORA", "RUC", "DIRECCION DEL GENERADOR", 
-                 "N° GUIA", "", "DESCRIPCION DE RESIDUOS", "", "", "", "CANTIDAD (Tn)", "", "DESTINO FINAL"]
+                }
             ]
-            sheets.spreadsheets().values().update(
-                spreadsheetId=ID_DESTINO_SUNAT,
-                range=f"'{nombre_pestana}'!A1:O1",
-                valueInputOption="USER_ENTERED",
-                body={"values": headers}
-            ).execute()
+        }
+        sheets.spreadsheets().batchUpdate(spreadsheetId=ID_DESTINO_SUNAT, body=req).execute()
+        
+        # Inicializar headers si es nueva
+        headers = [
+            ["", "FECHA", "MES", "EMPRESA GENERADORA", "RUC", "DIRECCION DEL GENERADOR", 
+             "N° GUIA", "", "DESCRIPCION DE RESIDUOS", "", "", "", "CANTIDAD (Tn)", "", "DESTINO FINAL"]
+        ]
+        sheets.spreadsheets().values().update(
+            spreadsheetId=ID_DESTINO_SUNAT,
+            range=f"'{nombre_pestana}'!A1:O1",
+            valueInputOption="USER_ENTERED",
+            body={"values": headers}
+        ).execute()
             
-        return True
+        return nombre_pestana
     except Exception as e:
         if "must not be an Office file" in str(e):
             st.error("🚨 **Error de Formato (Excel detectado):** El archivo de SUNAT configurado es un **Excel (.xlsx)**. Google API no permite editarlo directamente.\n\n**SOLUCIÓN:**\n1. Ve a Google Drive y abre ese archivo.\n2. Clic en **Archivo** -> **Guardar como hoja de cálculo de Google**.\n3. Copia el ID del nuevo archivo y actualízalo en el código (`ID_DESTINO_SUNAT`).")
@@ -105,7 +111,8 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
     _, sheets = obtener_servicios()
     if not sheets: return False
     
-    if not asegurar_pestana_destino(sheets, nombre_pestana):
+    nombre_pestana_real = asegurar_pestana_destino(sheets, nombre_pestana)
+    if not nombre_pestana_real:
         return False
         
     try:
@@ -146,13 +153,13 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
             
         if valores_a_insertar:
             # Encontrar la primera fila vacía leyendo la columna B (Fecha)
-            r = sheets.spreadsheets().values().get(spreadsheetId=ID_DESTINO_SUNAT, range=f"'{nombre_pestana}'!B:B").execute()
+            r = sheets.spreadsheets().values().get(spreadsheetId=ID_DESTINO_SUNAT, range=f"'{nombre_pestana_real}'!B:B").execute()
             next_row = len(r.get('values', [])) + 1
             if next_row < 2: next_row = 2
             
             sheets.spreadsheets().values().update(
                 spreadsheetId=ID_DESTINO_SUNAT,
-                range=f"'{nombre_pestana}'!A{next_row}",
+                range=f"'{nombre_pestana_real}'!A{next_row}",
                 valueInputOption="USER_ENTERED",
                 body={"values": valores_a_insertar}
             ).execute()
@@ -404,4 +411,30 @@ def render_sigersol():
                         st.warning("Se migraron a SUNAT, pero falló la actualización del check en la hoja de origen.")
                 elif not exito_global:
                     st.error("Error crítico al migrar los datos a las hojas destino de SUNAT.")
+
+    # --- 5. Admin Tools y Limpieza (Fuera del Sidebar) ---
+    st.divider()
+    
+    col_tools1, col_tools2 = st.columns(2)
+    with col_tools1:
+        if st.button("Limpiar Sesión Activa", key="btn_limpiar_sigersol", use_container_width=True):
+            llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
+            for k in list(st.session_state.keys()):
+                if k not in llaves_protegidas:
+                    del st.session_state[k]
+            st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+            st.rerun()
+
+    with col_tools2:
+        if st.session_state.get('usuario_rol') == 'Admin':
+            with st.expander("🛠️ Admin Tools"):
+                st.warning("Controles Elevados")
+                st.markdown("### 📊 Rendimiento de Sesión")
+                cx1, cx2 = st.columns(2)
+                cx1.metric(label="Certificados", value=st.session_state.get('metricas_exitosos', 0), delta="Esta sesión")
+                cx2.metric(label="Errores", value=st.session_state.get('metricas_errores', 0), delta="Alertas", delta_color="inverse")
+                st.divider()
+                if st.button("Forzar Purga GCP", key="btn_purge_sigersol", use_container_width=True):
+                    st.cache_data.clear()
+                    st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
 
