@@ -10,7 +10,7 @@ from src.utils.format_utils import limpiar_monto, formato_inteligente
 import time
 
 # ID del destino dado en el prompt
-ID_DESTINO_SUNAT = "1EBS1S0-oHaCBKuHPgjxIkHMLp__TDYgj"
+ID_DESTINO_SUNAT = "1xlgN2b6uRfEauguF1fYVGeo7DH6igcvJwl9uEKzu2ZU"
 
 def leer_registro_guias():
     _, sheets = obtener_servicios()
