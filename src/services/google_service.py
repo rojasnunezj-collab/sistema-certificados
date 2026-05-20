@@ -524,7 +524,7 @@ def actualizar_bitacora_guias(servicio_sheets, filas):
     if not servicio_sheets or not filas: return False
     try:
         hora_lima = datetime.utcnow() - timedelta(hours=5)
-        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M')}"
+        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M:%S')}"
         
         data = []
         for fila in filas:
@@ -551,7 +551,7 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
         v = r.get('values', [])
         
         hora_lima = datetime.utcnow() - timedelta(hours=5)
-        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M')}"
+        marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M:%S')}"
         
         for i, fila in enumerate(v):
             if len(fila) > 1 and str(fila[1]).strip().upper() == str(num_guia).strip().upper():

@@ -217,6 +217,26 @@ if modulo_actual == "📄 Generador de Certificados":
         tipo_flujo = st.selectbox("Tipo de Certificado", options=opciones_finales)
 
         st.divider()
+        if st.button("Limpiar Sesión Activa", key="btn_limpiar_cert", use_container_width=True):
+            llaves_protegidas = ['repo', 'usuario_rol', 'usuario_email', 'metricas_exitosos', 'metricas_errores']
+            for k in list(st.session_state.keys()):
+                if k not in llaves_protegidas:
+                    del st.session_state[k]
+            st.session_state.uploader_key = st.session_state.get('uploader_key', 0) + 1
+            st.rerun()
+
+        if st.session_state.get('usuario_rol') == 'Admin':
+            st.divider()
+            with st.expander("🛠️ Admin Tools"):
+                st.warning("Controles Elevados")
+                st.markdown("### 📊 Rendimiento de Sesión")
+                col_c1, col_c2 = st.columns(2)
+                col_c1.metric(label="Certificados", value=st.session_state.get('metricas_exitosos', 0), delta="Esta sesión")
+                col_c2.metric(label="Errores", value=st.session_state.get('metricas_errores', 0), delta="Alertas", delta_color="inverse")
+                st.divider()
+                if st.button("Forzar Purga de Caché GCP", key="btn_purge_cert", use_container_width=True):
+                    st.cache_data.clear()
+                    st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
 
 if modulo_actual == "📄 Generador de Certificados":
 
@@ -637,7 +657,7 @@ if modulo_actual == "📄 Generador de Certificados":
                         break
                     
             if fila_encontrada:
-                body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y')}"]]}
+                body = {"values": [[f"✅ Nuevo: {datetime.now(ZoneInfo('America/Lima')).strftime('%d/%m/%Y %H:%M:%S')}"]]}
                 sht_drv.spreadsheets().values().update(
                     spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{target_ws_title}'!H{fila_encontrada}",
                     valueInputOption="USER_ENTERED", body=body
