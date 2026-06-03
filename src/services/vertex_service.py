@@ -1,23 +1,23 @@
 # ====================================================================
 # --- BLOQUE 0: Imports ---
 # ====================================================================
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part, GenerationConfig
+from google import genai
+from google.genai import types
 from google.oauth2 import service_account
 import os
 import json
 import streamlit as st
 import warnings
 
-# Suprimir explicitamente warnings de deprecación de Vertex AI para evitar KeyError: 'src' en Streamlit
-warnings.filterwarnings("ignore", category=UserWarning, module="vertexai")
+# Suprimir explicitamente warnings de google-genai o dependencias
+warnings.filterwarnings("ignore", category=UserWarning, module="google")
 
 # ====================================================================
 # --- BLOQUE 1: Función Principal y Variables Estáticas ---
 # ====================================================================
 def procesar_guia_ia_vertex(pdf_bytes):
     """
-    Procesamiento Ultra-Resiliente con descubrimiento de modelos y multi-región.
+    Procesamiento Ultra-Resiliente con descubrimiento de modelos y multi-región usando google-genai.
     """
     PROJECT_ID = "sistemacertificados-485822"
     
@@ -43,11 +43,11 @@ def procesar_guia_ia_vertex(pdf_bytes):
             except Exception as e:
                 st.error(f"Error cargando archivo {cred_path}: {e}")
 
-    # 3. Inicializar Vertex AI con las credenciales obtenidas
+    # 3. Prueba inicial del cliente
     try:
-        vertexai.init(project=PROJECT_ID, location="us-central1", credentials=creds)
+        genai.Client(vertexai=True, project=PROJECT_ID, location="us-central1", credentials=creds)
     except Exception as e:
-        st.error(f"Error inicializando Vertex AI: {e}")
+        st.error(f"Error inicializando Google GenAI SDK: {e}")
 
     # ====================================================================
     # --- BLOQUE 3: Configuración de Regiones y Modelos (Fallbacks) ---
@@ -93,22 +93,22 @@ def procesar_guia_ia_vertex(pdf_bytes):
     # ====================================================================
     # --- BLOQUE 5: Bucle Multi-Región y Ejecución de Modelos IA ---
     # ====================================================================
-    pdf_part = Part.from_data(data=pdf_bytes, mime_type="application/pdf")
+    pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
 
     # Bucle de Recuperación de Desastres
     errores_acumulados = []
     
     for region in regiones:
         try:
-            vertexai.init(project=PROJECT_ID, location=region, credentials=creds)
+            client = genai.Client(vertexai=True, project=PROJECT_ID, location=region, credentials=creds)
             
             # 3. Intentar Modelos en esta región
             for m_name in modelos_flash + modelos_pro:
                 try:
-                    model = GenerativeModel(m_name)
-                    response = model.generate_content(
-                        [pdf_part, prompt],
-                        generation_config=GenerationConfig(response_mime_type="application/json")
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=[pdf_part, prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
                     datos = json.loads(response.text)
                     
@@ -159,9 +159,6 @@ def procesar_guia_ia_vertex_sigersol(pdf_bytes):
             try: creds = service_account.Credentials.from_service_account_file(cred_path)
             except Exception: pass
 
-    try: vertexai.init(project=PROJECT_ID, location="us-central1", credentials=creds)
-    except Exception: pass
-
     regiones = ["us-central1", "us-west1", "us-east4", "southamerica-east1"]
     modelos_flash = ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"]
     modelos_pro = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemini-1.5-pro-002"]
@@ -194,15 +191,17 @@ def procesar_guia_ia_vertex_sigersol(pdf_bytes):
     }
     """
 
+    pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+
     for region in regiones:
         try:
-            vertexai.init(project=PROJECT_ID, location=region, credentials=creds)
+            client = genai.Client(vertexai=True, project=PROJECT_ID, location=region, credentials=creds)
             for m_name in modelos_flash + modelos_pro:
                 try:
-                    model = GenerativeModel(m_name)
-                    response = model.generate_content(
-                        [Part.from_data(data=pdf_bytes, mime_type="application/pdf"), prompt],
-                        generation_config=GenerationConfig(response_mime_type="application/json")
+                    response = client.models.generate_content(
+                        model=m_name,
+                        contents=[pdf_part, prompt],
+                        config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
                     datos = json.loads(response.text)
                     if datos.get("destinatario") or len(datos.get("vehiculo", "")) >= 3:

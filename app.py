@@ -686,6 +686,14 @@ if modulo_actual == "📄 Generador de Certificados":
 
     if v_df_seguro is not None and not v_df_seguro.empty:
 
+        # --- FIX PARA LLENADO MANUAL ---
+        # Propagar la guía y placa ingresadas manualmente hacia la tabla para su registro
+        if modo_manual:
+            if 'guia_origen' in v_items_df.columns:
+                v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(lambda x: v_guia if str(x).strip() in ['', 'None', 'nan'] else x)
+            if 'placa_origen' in v_items_df.columns:
+                v_items_df['placa_origen'] = v_items_df['placa_origen'].apply(lambda x: v_placa if str(x).strip() in ['', 'None', 'nan'] else x)
+
         guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
         if len(guias_unicas_prev) > 1:
             modalidad_gen = st.radio("Modalidad de Generación", [
