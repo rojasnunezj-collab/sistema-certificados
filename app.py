@@ -693,6 +693,16 @@ if modulo_actual == "📄 Generador de Certificados":
                 v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(lambda x: v_guia if str(x).strip() in ['', 'None', 'nan'] else x)
             if 'placa_origen' in v_items_df.columns:
                 v_items_df['placa_origen'] = v_items_df['placa_origen'].apply(lambda x: v_placa if str(x).strip() in ['', 'None', 'nan'] else x)
+        # --- FIX ORDENAMIENTO GLOBAL ANTES DE GENERAR ---
+        if 'fecha_origen' in v_items_df.columns:
+            def fecha_a_entero_gen(fecha_str):
+                try:
+                    p = str(fecha_str).strip().split('/')
+                    if len(p) == 3: return int(f"{p[2]}{p[1]}{p[0]}")
+                except: pass
+                return 99999999 
+            v_items_df['_llave_orden'] = v_items_df['fecha_origen'].apply(fecha_a_entero_gen)
+            v_items_df = v_items_df.sort_values(by='_llave_orden', ascending=True).drop(columns=['_llave_orden']).reset_index(drop=True)
 
         guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
         if len(guias_unicas_prev) > 1:
