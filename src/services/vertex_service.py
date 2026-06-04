@@ -31,6 +31,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
         try:
             creds_info = dict(st.secrets["google"])
             creds = service_account.Credentials.from_service_account_info(creds_info)
+            creds = creds.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
         except Exception as e:
             st.error(f"Error cargando credenciales desde st.secrets: {e}")
 
@@ -40,6 +41,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
         if cred_path:
             try:
                 creds = service_account.Credentials.from_service_account_file(cred_path)
+                creds = creds.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
             except Exception as e:
                 st.error(f"Error cargando archivo {cred_path}: {e}")
 
@@ -151,12 +153,15 @@ def procesar_guia_ia_vertex_sigersol(pdf_bytes):
         try:
             creds_info = dict(st.secrets["google"])
             creds = service_account.Credentials.from_service_account_info(creds_info)
+            creds = creds.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
         except Exception: pass
 
     if not creds:
         cred_path = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
         if cred_path:
-            try: creds = service_account.Credentials.from_service_account_file(cred_path)
+            try: 
+                creds = service_account.Credentials.from_service_account_file(cred_path)
+                creds = creds.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
             except Exception: pass
 
     regiones = ["us-central1", "us-west1", "us-east4", "southamerica-east1"]
