@@ -252,7 +252,7 @@ if modulo_actual == "📄 Generador de Certificados":
             if not cat:
                 st.info("✅ ¡Todo está al día! No hay certificados pendientes por generar en el repositorio.")
             else:
-                c1, c2, c3 = st.columns(3)
+                c1, c2, c3, c4 = st.columns(4)
                 # Caja 1: Empresa
                 r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...", key="repo_empresa")
                 
@@ -261,17 +261,23 @@ if modulo_actual == "📄 Generador de Certificados":
                 r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa, key="repo_mes")
                 
                 # Caja 3: Fundo
-                opciones_fundo = cat.get(r_empresa, {}).get(r_mes, []) if r_mes else []
+                opciones_fundo = list(cat.get(r_empresa, {}).get(r_mes, {}).keys()) if r_mes else []
                 r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes, key="repo_fundo")
                 
-                if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes)):
-                    res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes)
+                # Caja 4: Tipo (NUEVA)
+                opciones_tipo = list(cat.get(r_empresa, {}).get(r_mes, {}).get(r_fundo, [])) if r_fundo else []
+                r_tipo = c4.selectbox("4. Tipo (Col. J)", options=opciones_tipo, index=None, placeholder="Seleccione...", disabled=not r_fundo, key="repo_tipo")
+                
+                if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes and r_tipo)):
+                    res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes, r_tipo)
                     if res:
                         st.success(f"✅ Se encontraron {len(res)} guías nuevas para procesar.")
                         st.session_state['guias_repo'] = res
+                        st.session_state['repo_tipo_seleccionado'] = r_tipo
                     else:
                         st.warning("No se encontraron guías pendientes para estos filtros.")
                         if 'guias_repo' in st.session_state: del st.session_state['guias_repo']
+                        if 'repo_tipo_seleccionado' in st.session_state: del st.session_state['repo_tipo_seleccionado']
                         
                 if st.session_state.get('guias_repo'):
                     opciones_nombres = [r['nombre'] for r in st.session_state['guias_repo']]
@@ -715,6 +721,12 @@ if modulo_actual == "📄 Generador de Certificados":
         
         # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
         if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
+            if locals().get('repositorio_masivo', False) and st.session_state.get('repo_tipo_seleccionado'):
+                if st.session_state['repo_tipo_seleccionado'] == "Comercialización":
+                    tipo_flujo = "Comercialización"
+                elif st.session_state['repo_tipo_seleccionado'] == "Disposición Final":
+                    tipo_flujo = "Disposición Final 1"
+
             drive, _ = obtener_servicios()
             if drive:
                 try:

@@ -367,7 +367,7 @@ def obtener_catalogo_guias(_servicio_sheets):
     """Extrae listado de empresas, mesas y fundos anidados para los selectbots."""
     if not _servicio_sheets: return {}
     try:
-        r = _servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:H").execute()
+        r = _servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:J").execute()
         v = r.get('values', [])
         
         catalogo = {}
@@ -397,28 +397,42 @@ def obtener_catalogo_guias(_servicio_sheets):
                 elif fecha_str:
                     mes_formateado = fecha_str
                 
+                tipo_raw = str(fila[9]).strip() if len(fila) > 9 else ""
+                import unicodedata
+                tipo_norm = ''.join(c for c in unicodedata.normalize('NFD', tipo_raw) if unicodedata.category(c) != 'Mn').lower().replace(" ", "")
+                if "comercializacion" in tipo_norm:
+                    tipo_final = "Comercialización"
+                elif "disposicionfinal" in tipo_norm:
+                    tipo_final = "Disposición Final"
+                else:
+                    tipo_final = tipo_raw
+
                 if empresa:
                     if empresa not in catalogo:
                         catalogo[empresa] = {}
                     if mes_formateado not in catalogo[empresa]:
-                        catalogo[empresa][mes_formateado] = set()
+                        catalogo[empresa][mes_formateado] = {}
                     if fundo:
-                        catalogo[empresa][mes_formateado].add(fundo)
+                        if fundo not in catalogo[empresa][mes_formateado]:
+                            catalogo[empresa][mes_formateado][fundo] = set()
+                        if tipo_final:
+                            catalogo[empresa][mes_formateado][fundo].add(tipo_final)
                         
         # Formatear sets a listas ordenadas
         for emp in catalogo:
             for mes in catalogo[emp]:
-                catalogo[emp][mes] = sorted(list(catalogo[emp][mes]))
+                for fund in catalogo[emp][mes]:
+                    catalogo[emp][mes][fund] = sorted(list(catalogo[emp][mes][fund]))
         return catalogo
     except Exception as e:
         print(f"Error catalogo guias: {e}")
         return {}
 
-def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
+def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo):
     """Filtra y devuelve archivos a descargar, validando que no estén procesados."""
     if not servicio_sheets: return []
     try:
-        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:H").execute()
+        r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:J").execute()
         v = r.get('values', [])
         
         resultados = []
@@ -444,8 +458,18 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes):
                 elif fecha_str:
                     mes_formateado = fecha_str
                 
+                tipo_raw = str(fila[9]).strip() if len(fila) > 9 else ""
+                import unicodedata
+                tipo_norm = ''.join(c for c in unicodedata.normalize('NFD', tipo_raw) if unicodedata.category(c) != 'Mn').lower().replace(" ", "")
+                if "comercializacion" in tipo_norm:
+                    tipo_final = "Comercialización"
+                elif "disposicionfinal" in tipo_norm:
+                    tipo_final = "Disposición Final"
+                else:
+                    tipo_final = tipo_raw
+
                 # Coincidir con los filtros y que no contenga marca de 'Nuevo' procesado
-                if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and f_archivo:
+                if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and tipo_final == tipo and f_archivo:
                     if "✅ Nuevo" not in bitacora:
                         numero_guia = str(fila[1]).strip() if len(fila) > 1 else "S/N"
                         resultados.append({"nombre": f_archivo, "fila": fila_real, "numero_guia": numero_guia})
