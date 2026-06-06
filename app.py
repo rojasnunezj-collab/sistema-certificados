@@ -261,11 +261,13 @@ if modulo_actual == "📄 Generador de Certificados":
                 r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa, key="repo_mes")
                 
                 # Caja 3: Fundo
-                opciones_fundo = list(cat.get(r_empresa, {}).get(r_mes, {}).keys()) if r_mes else []
+                mes_data = cat.get(r_empresa, {}).get(r_mes, {}) if r_mes else {}
+                opciones_fundo = list(mes_data.keys()) if isinstance(mes_data, dict) else (mes_data if isinstance(mes_data, list) else [])
                 r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes, key="repo_fundo")
                 
                 # Caja 4: Tipo (NUEVA)
-                opciones_tipo = list(cat.get(r_empresa, {}).get(r_mes, {}).get(r_fundo, [])) if r_fundo else []
+                fundo_data = mes_data.get(r_fundo, []) if isinstance(mes_data, dict) and r_fundo else []
+                opciones_tipo = list(fundo_data) if fundo_data else []
                 r_tipo = c4.selectbox("4. Tipo (Col. J)", options=opciones_tipo, index=None, placeholder="Seleccione...", disabled=not r_fundo, key="repo_tipo")
                 
                 if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes and r_tipo)):
