@@ -136,6 +136,10 @@ correo_actual = st.session_state['usuario_email']
 from src.services.google_service import obtener_usuarios_roles
 bd_usuarios = obtener_usuarios_roles()
 
+if bd_usuarios is None:
+    st.warning("⚠️ Hay intermitencias con el servidor de Google (Error 503). Por favor, intenta recargar la página en unos segundos.")
+    st.stop()
+
 # 4. Bloqueo 2: Denegar si no hace match o si su cuenta fue deshabilitada.
 if correo_actual not in bd_usuarios or bd_usuarios[correo_actual].get('Estado', '').strip().upper() != 'ACTIVO':
     st.error(f"⛔ Acceso denegado: El usuario '{correo_actual}' no cuenta con un rol Asignado o está inactivo.")

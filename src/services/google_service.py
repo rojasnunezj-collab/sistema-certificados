@@ -592,42 +592,50 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
         print(f"Error actualizando marca de control {num_guia}: {e}")
         return False
 
+@st.cache_data(ttl=600, show_spinner=False)
 def obtener_usuarios_roles():
     """Descarga los roles de usuario desde la hoja 'Usuario_Roles'."""
     from src.services.google_service import obtener_servicios
+    import time
     _, servicio_sheets = obtener_servicios()
     
     if not servicio_sheets:
         return {}
         
-    try:
-        # Apunta a la Base de Datos Exclusiva de Seguridad (RBAC)
-        SHEET_ID = "1OglcHUuRkD6LErUMevr-tOmAsLZpQEk2OKn8NyJN8mo" 
-        r = servicio_sheets.spreadsheets().values().get(
-            spreadsheetId=SHEET_ID, 
-            range="'Usuario_Roles'!A2:D"
-        ).execute()
-        
-        v = r.get('values', [])
-        usuarios = {}
-        for fila in v:
-            if len(fila) >= 4:
-                email = str(fila[0]).strip().lower()
-                nombre = str(fila[1]).strip()
-                rol = str(fila[2]).strip()
-                estado = str(fila[3]).strip()
-                
-                if email:
-                    usuarios[email] = {
-                        "Nombre": nombre,
-                        "Rol": rol,
-                        "Estado": estado
-                    }
-        return usuarios
-    except Exception as e:
-        import streamlit as st
-        st.error(f"Error cargando dict de roles: {e}")
-        return {}
+    SHEET_ID = "1OglcHUuRkD6LErUMevr-tOmAsLZpQEk2OKn8NyJN8mo" 
+    
+    intentos = 3
+    for intento in range(intentos):
+        try:
+            # Apunta a la Base de Datos Exclusiva de Seguridad (RBAC)
+            r = servicio_sheets.spreadsheets().values().get(
+                spreadsheetId=SHEET_ID, 
+                range="'Usuario_Roles'!A2:D"
+            ).execute()
+            
+            v = r.get('values', [])
+            usuarios = {}
+            for fila in v:
+                if len(fila) >= 4:
+                    email = str(fila[0]).strip().lower()
+                    nombre = str(fila[1]).strip()
+                    rol = str(fila[2]).strip()
+                    estado = str(fila[3]).strip()
+                    
+                    if email:
+                        usuarios[email] = {
+                            "Nombre": nombre,
+                            "Rol": rol,
+                            "Estado": estado
+                        }
+            return usuarios
+        except Exception as e:
+            if intento < intentos - 1:
+                time.sleep(2)
+                continue
+            import streamlit as st
+            st.error(f"Error cargando dict de roles: {e}")
+            return None
 
 def registrar_auditoria_sistema(correo, modo, guias_leidas, guias_certificadas):
     """Registra en la pestaña 'Control' del Sheet RBAC."""
