@@ -55,12 +55,12 @@ def procesar_guia_ia_vertex(pdf_bytes):
     # --- BLOQUE 3: Configuración de Regiones y Modelos (Fallbacks) ---
     # ====================================================================
     # 2. Estrategia de búsqueda (Regiones y Modelos dinámicos)
-    # us-central1 (estándar), us-east4 (fallback común)
-    regiones = ["us-central1", "us-east4"]
+    # us-central1 (estándar), us-west1 (estable), us-east4 (fallback común)
+    regiones = ["us-central1", "us-west1", "us-east4", "southamerica-east1"]
     
     # Modelos detectados en este proyecto específico
-    modelos_flash = ["gemini-1.5-flash-002", "gemini-2.0-flash-001", "gemini-1.5-flash"]
-    modelos_pro = ["gemini-1.5-pro-002", "gemini-1.5-pro"]
+    modelos_flash = ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"]
+    modelos_pro = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemini-1.5-pro-002"]
 
    # ====================================================================
     # --- BLOQUE 4: Prompt del Generative Engine (Strict Extraction V4) ---
@@ -114,7 +114,7 @@ def procesar_guia_ia_vertex(pdf_bytes):
                     )
                     datos = json.loads(response.text)
                     
-                    if isinstance(datos, dict):
+                    if datos.get("destinatario") or len(datos.get("vehiculo", "")) >= 3:
                         if region != "us-central1":
                             st.info(f"💡 Conectado exitosamente vía {region} con {m_name}")
                         return datos
@@ -164,9 +164,9 @@ def procesar_guia_ia_vertex_sigersol(pdf_bytes):
                 creds = creds.with_scopes(['https://www.googleapis.com/auth/cloud-platform'])
             except Exception: pass
 
-    regiones = ["us-central1", "us-east4"]
-    modelos_flash = ["gemini-1.5-flash-002", "gemini-2.0-flash-001", "gemini-1.5-flash"]
-    modelos_pro = ["gemini-1.5-pro-002", "gemini-1.5-pro"]
+    regiones = ["us-central1", "us-west1", "us-east4", "southamerica-east1"]
+    modelos_flash = ["gemini-2.0-flash-001", "gemini-2.5-flash", "gemini-1.5-flash-002", "gemini-1.5-flash-8b"]
+    modelos_pro = ["gemini-2.5-pro", "gemini-3.1-pro-preview", "gemini-1.5-pro-002"]
 
     prompt = """
     INSTRUCCIÓN DE SISTEMA: Eres un extractor de datos OCR estricto. Tu única tarea es extraer datos del PDF adjunto y devolverlos ÚNICAMENTE en formato JSON válido. Tienes PROHIBIDO inventar datos, alucinar información o incluir texto fuera del JSON (como ```json o explicaciones).
@@ -209,7 +209,7 @@ def procesar_guia_ia_vertex_sigersol(pdf_bytes):
                         config=types.GenerateContentConfig(response_mime_type="application/json")
                     )
                     datos = json.loads(response.text)
-                    if isinstance(datos, dict):
+                    if datos.get("destinatario") or len(datos.get("vehiculo", "")) >= 3:
                         return datos
                 except Exception:
                     continue
