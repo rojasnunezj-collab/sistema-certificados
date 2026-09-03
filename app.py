@@ -944,6 +944,9 @@ if modulo_actual == "📄 Generador de Certificados":
                     # GUARDAR EN SESIÓN PARA PERSISTENCIA
                     st.session_state.word_buffer = final_bytes
                     st.session_state.nombre_generado = nombre_archivo_final
+                    st.session_state.tipo_cod = tipo_cod
+                    st.session_state.v_corr = v_corr
+                    st.session_state.destino_final = destino_final
                     st.session_state.generado = True
                     
                     st.session_state['msg_generado'] = True
@@ -1057,11 +1060,15 @@ if modulo_actual == "📄 Generador de Certificados":
                         st.session_state['subido_drive_link'] = link_drive
                         st.session_state['subido_drive_nombre'] = nombre_safe
                         st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
-                        st.session_state['subido_carpeta_exacta'] = carpeta_exacta if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
+                        carpeta_dest_safe = CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
+                        st.session_state['subido_carpeta_exacta'] = carpeta_dest_safe
                         st.session_state['subido_tipo_flujo'] = tipo_flujo
-                        st.session_state['subido_tipo_cod'] = tipo_cod
-                        st.session_state['subido_v_corr'] = v_corr
-                        st.session_state['subido_destino_final'] = destino_final
+                        tipo_cod_safe = st.session_state.get('tipo_cod') or ("COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER")
+                        v_corr_safe = st.session_state.get('v_corr') or str(v_corr)
+                        destino_safe = st.session_state.get('destino_final') or (val_fundo if val_fundo and val_fundo != "NAN" else str(v_cli).strip().upper())
+                        st.session_state['subido_tipo_cod'] = tipo_cod_safe
+                        st.session_state['subido_v_corr'] = v_corr_safe
+                        st.session_state['subido_destino_final'] = destino_safe
                         st.session_state['subido_guias_lista'] = guias_lista if 'guias_lista' in locals() else ([str(v_guia).strip().upper()] if str(v_guia).strip() else [])
                         
                         # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
