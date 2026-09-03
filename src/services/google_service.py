@@ -101,13 +101,18 @@ def registrar_en_control(datos_fila):
     _, sheets = obtener_servicios()
     if not sheets: return False
     try:
-        sheets.spreadsheets().values().append(
+        res = sheets.spreadsheets().values().append(
             spreadsheetId=ID_SHEET_CONTROL, range="'historial'!A:J",
             valueInputOption="USER_ENTERED", 
             insertDataOption="INSERT_ROWS",
             body={"values": [datos_fila]}
         ).execute()
-        return True
+        import re
+        updates = res.get('updates', {})
+        updated_range = updates.get('updatedRange', '')
+        m = re.search(r'(\d+)', updated_range.split('!')[-1])
+        fila_idx = int(m.group(1)) if m else None
+        return fila_idx if fila_idx else True
     except: return False
 
 import io
@@ -660,4 +665,347 @@ def registrar_auditoria_sistema(correo, modo, guias_leidas, guias_certificadas):
         return True
     except Exception as e:
         print(f"Error registrando auditoría: {e}")
+        return False
+
+# ====================================================================
+# --- BLOQUE 5: Unificador de Documentos (Certificado + Guías) ---
+# ====================================================================
+
+def es_guia_valida_para_unir(observacion):
+    """
+    Determina si una fila en Registro_Guias es válida para unir.
+    SI DICE ERRADA -> NO (devuelve False).
+    Excepción: si dice 'GUIA CORRECTA' (es la versión rectificada) -> devuelve True.
+    """
+    obs = str(observacion).strip().upper()
+    if not obs or obs in ['NONE', 'NAN', '-', '']:
+        return True
+    if "GUIA CORRECTA" in obs:
+        return True
+    for patron in ["ERRADA", "GUIA ERRADA", "ERROR", "SE HIZO MAL", "ME EQUIVOQUE", "ANULADA"]:
+        if patron in obs:
+            return False
+    return True
+
+def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
+    """Obtiene el enlace webViewLink de un archivo en Drive por ID o nombre."""
+    import re
+    if not servicio_drive or not nombre_archivo:
+        return None
+    try:
+        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', str(nombre_archivo))
+        if url_match:
+            archivo_id = url_match.group(1)
+            meta = servicio_drive.files().get(fileId=archivo_id, fields='webViewLink', supportsAllDrives=True).execute()
+            return meta.get('webViewLink')
+        else:
+            query = f"name contains '{nombre_archivo}' and trashed=false"
+            res = servicio_drive.files().list(
+                q=query, 
+                spaces='drive', 
+                corpora='allDrives',
+                includeItemsFromAllDrives=True, 
+                supportsAllDrives=True, 
+                fields='files(id, webViewLink)'
+            ).execute()
+            items = res.get('files', [])
+            if items:
+                return items[0].get('webViewLink')
+    except Exception as e:
+        print(f"Error obteniendo link Drive para {nombre_archivo}: {e}")
+    return None
+
+def buscar_guias_asociadas_para_unir(sheets_service, drive_service, guias_lista):
+    """
+    Busca en Registro_Guias las guías de Transporte y Remisión vinculadas al certificado.
+    Filtra automáticamente filas con 'ERRADA'.
+    Retorna lista con detalles y enlaces de Drive.
+    """
+    import re
+    if not sheets_service or not guias_lista:
+        return []
+    
+    try:
+        r = sheets_service.spreadsheets().values().get(
+            spreadsheetId=ID_SHEET_REPOSITORIO, 
+            range="'Registro_Guias'!A1:O350"
+        ).execute()
+        filas = r.get('values', [])
+        if len(filas) < 2: return []
+        
+        def norm_g(s):
+            t = re.sub(r'(?i)[nº°\s_-]', '', str(s)).upper()
+            return "".join([p.lstrip('0') if p.isdigit() else p for p in re.findall(r'[A-Z]+|[0-9]+', t)])
+
+        guias_norm = [norm_g(g) for g in guias_lista if str(g).strip() and str(g).strip().upper() not in ['NONE', 'NAN', 'S/N']]
+        
+        resultados = []
+        
+        for idx, row in enumerate(filas[1:]):
+            row_idx = idx + 2
+            num_transporte = str(row[1]).strip() if len(row) > 1 else ""
+            num_remision = str(row[2]).strip() if len(row) > 2 else ""
+            archivo_transporte = str(row[8]).strip() if len(row) > 8 else ""
+            archivo_remision = str(row[9]).strip() if len(row) > 9 else ""
+            observacion = str(row[11]).strip() if len(row) > 11 else ""
+            
+            c_trans = norm_g(num_transporte)
+            c_rem = norm_g(num_remision)
+            
+            match = False
+            for g in guias_norm:
+                if g and (g == c_rem or g in c_rem or c_rem in g or g == c_trans or g in c_trans or c_trans in g):
+                    match = True
+                    break
+                    
+            if match:
+                es_valida = es_guia_valida_para_unir(observacion)
+                link_trans = obtener_link_archivo_drive(drive_service, archivo_transporte) if archivo_transporte else None
+                link_rem = obtener_link_archivo_drive(drive_service, archivo_remision) if archivo_remision else None
+                
+                resultados.append({
+                    "fila": row_idx,
+                    "num_transporte": num_transporte,
+                    "num_remision": num_remision,
+                    "archivo_transporte": archivo_transporte,
+                    "archivo_remision": archivo_remision,
+                    "observacion": observacion,
+                    "valida": es_valida,
+                    "link_transporte": link_trans,
+                    "link_remision": link_rem
+                })
+                
+        return resultados
+    except Exception as e:
+        print(f"Error buscando guías asociadas: {e}")
+        return []
+
+def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
+    """Descarga un archivo específico de Drive (exporta a Word/PDF si es Google Doc)."""
+    import io
+    import re
+    from googleapiclient.http import MediaIoBaseDownload
+    if not servicio_drive or not file_id_o_nombre:
+        return None
+    try:
+        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', str(file_id_o_nombre))
+        archivo_id = url_match.group(1) if url_match else str(file_id_o_nombre).strip()
+        
+        try:
+            meta = servicio_drive.files().get(fileId=archivo_id, fields='name, mimeType', supportsAllDrives=True).execute()
+            mime_type = meta.get('mimeType', '')
+            archivo_name = meta.get('name', 'archivo_descargado')
+            
+            if mime_type == 'application/vnd.google-apps.document':
+                req = servicio_drive.files().export_media(fileId=archivo_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            else:
+                req = servicio_drive.files().get_media(fileId=archivo_id)
+                
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, req)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            fh.seek(0)
+            fh.name = archivo_name
+            return fh
+        except Exception:
+            archivos = descargar_guias_drive(servicio_drive, [archivo_id])
+            if archivos:
+                return archivos[0]
+    except Exception as e:
+        print(f"Error descargando {file_id_o_nombre}: {e}")
+    return None
+
+def convertir_imagen_a_pdf(imagen_bytes, nombre_archivo=""):
+    """Convierte bytes de imagen (JPG, PNG, JPEG, WEBP) a páginas PDF en memoria."""
+    import io
+    from PIL import Image
+    nombre_lower = str(nombre_archivo).lower()
+    
+    es_imagen = (
+        nombre_lower.endswith(('.jpg', '.jpeg', '.png', '.webp', '.bmp')) or
+        imagen_bytes[:4] in [b'\xff\xd8\xff\xe0', b'\xff\xd8\xff\xe1', b'\x89PNG']
+    )
+    if es_imagen:
+        try:
+            img = Image.open(io.BytesIO(imagen_bytes))
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            out_pdf = io.BytesIO()
+            img.save(out_pdf, format='PDF')
+            out_pdf.seek(0)
+            return out_pdf.getvalue()
+        except Exception as e:
+            print(f"Error convirtiendo imagen a PDF ({nombre_archivo}): {e}")
+    return imagen_bytes
+
+def convertir_docx_a_pdf(docx_bytes):
+    """Convierte un documento Word .docx a PDF. Prioridad: MS Word local (win32com). Fallback: Drive API."""
+    import io
+    import os
+    import tempfile
+    
+    # 1. Intentar con MS Word local
+    try:
+        import win32com.client
+        import pythoncom
+        pythoncom.CoInitialize()
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as f_in:
+            f_in.write(docx_bytes)
+            docx_path = f_in.name
+        pdf_path = docx_path.replace('.docx', '.pdf')
+        
+        word = win32com.client.DispatchEx("Word.Application")
+        word.Visible = False
+        doc = word.Documents.Open(docx_path)
+        doc.SaveAs(pdf_path, FileFormat=17) # 17 = wdFormatPDF
+        doc.Close()
+        word.Quit()
+        
+        with open(pdf_path, 'rb') as f_out:
+            pdf_bytes = f_out.read()
+            
+        if os.path.exists(docx_path): os.remove(docx_path)
+        if os.path.exists(pdf_path): os.remove(pdf_path)
+        return pdf_bytes
+    except Exception as e:
+        print(f"Aviso: win32com no disponible ({e}). Intentando fallback con Google Drive API...")
+        
+    # 2. Fallback vía Google Drive API
+    drive_service, _ = obtener_servicios()
+    if drive_service:
+        try:
+            from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+            media = MediaIoBaseUpload(io.BytesIO(docx_bytes), mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document', resumable=False)
+            temp_file = drive_service.files().create(
+                body={'name': 'temp_conv_pdf', 'mimeType': 'application/vnd.google-apps.document'},
+                media_body=media,
+                fields='id'
+            ).execute()
+            temp_id = temp_file.get('id')
+            req = drive_service.files().export_media(fileId=temp_id, mimeType='application/pdf')
+            fh = io.BytesIO()
+            dl = MediaIoBaseDownload(fh, req)
+            done = False
+            while not done: _, done = dl.next_chunk()
+            drive_service.files().delete(fileId=temp_id).execute()
+            return fh.getvalue()
+        except Exception as e2:
+            print(f"Fallback Drive API PDF conversion falló: {e2}")
+            
+    return None
+
+def unir_tres_documentos_pdf(cert_docx_bytes, remision_file_obj, transporte_file_obj):
+    """
+    Une en orden estricto los 3 documentos:
+    1. Certificado (Página 1)
+    2. Guía de Remisión (Página 2)
+    3. Guía de Transporte (Página 3)
+    Convierte imágenes (JPG/PNG) a PDF si es necesario.
+    """
+    import io
+    from pypdf import PdfWriter, PdfReader
+    
+    # 1. Convertir Certificado a PDF
+    cert_pdf = convertir_docx_a_pdf(cert_docx_bytes)
+    if not cert_pdf:
+        raise Exception("No se pudo convertir el Certificado Word a PDF.")
+        
+    writer = PdfWriter()
+    
+    # Agregar páginas del Certificado
+    reader_cert = PdfReader(io.BytesIO(cert_pdf))
+    for page in reader_cert.pages:
+        writer.add_page(page)
+        
+    # 2. Agregar páginas de la Guía de Remisión
+    if remision_file_obj:
+        rem_bytes = remision_file_obj.getvalue() if hasattr(remision_file_obj, 'getvalue') else remision_file_obj.read()
+        rem_nombre = getattr(remision_file_obj, 'name', '')
+        rem_pdf = convertir_imagen_a_pdf(rem_bytes, rem_nombre)
+        try:
+            reader_rem = PdfReader(io.BytesIO(rem_pdf))
+            for page in reader_rem.pages:
+                writer.add_page(page)
+        except Exception as e:
+            print(f"Error procesando páginas de Guía de Remisión: {e}")
+            
+    # 3. Agregar páginas de la Guía de Transporte
+    if transporte_file_obj:
+        trans_bytes = transporte_file_obj.getvalue() if hasattr(transporte_file_obj, 'getvalue') else transporte_file_obj.read()
+        trans_nombre = getattr(transporte_file_obj, 'name', '')
+        trans_pdf = convertir_imagen_a_pdf(trans_bytes, trans_nombre)
+        try:
+            reader_trans = PdfReader(io.BytesIO(trans_pdf))
+            for page in reader_trans.pages:
+                writer.add_page(page)
+        except Exception as e:
+            print(f"Error procesando páginas de Guía de Transporte: {e}")
+            
+    output = io.BytesIO()
+    writer.write(output)
+    output.seek(0)
+    return output.getvalue()
+
+def subir_pdf_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=None):
+    """Sube el archivo PDF unificado a Drive enrutándolo a la carpeta correcta."""
+    import unicodedata
+    import io
+    from googleapiclient.http import MediaIoBaseUpload
+    
+    if not carpeta_id:
+        def normalizar(texto):
+            texto = str(texto).lower()
+            return ''.join(c for c in unicodedata.normalize('NFD', texto) if unicodedata.category(c) != 'Mn')
+            
+        tipo_seguro = normalizar(tipo_flujo) 
+        if "comercializacion" in tipo_seguro:
+            carpeta_id = "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-" # Comercialización
+        else:
+            carpeta_id = "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S" # Servicios (Disp. Final)
+
+    drive, _ = obtener_servicios()
+    if not drive: return None
+    
+    try:
+        nom = nombre_archivo if nombre_archivo.lower().endswith('.pdf') else f"{nombre_archivo}.pdf"
+        file_metadata = {
+            'name': nom, 
+            'mimeType': 'application/pdf',
+            'parents': [carpeta_id]
+        }
+        media = MediaIoBaseUpload(
+            io.BytesIO(contenido_bytes), 
+            mimetype='application/pdf', 
+            resumable=True
+        )
+        file = drive.files().create(
+            body=file_metadata, 
+            media_body=media, 
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        return file.get('webViewLink')
+    except Exception as e:
+        import streamlit as st
+        st.error(f"Google Drive rechazó la subida del PDF. Motivo: {str(e)}")
+        print(f"Error subiendo PDF a Drive: {e}") 
+        return None
+
+def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf):
+    """Actualiza la columna I ('Link pdf') en la fila indicada de 'Historial'."""
+    if not servicio_sheets or not fila_historial or not link_pdf:
+        return False
+    try:
+        body = {"values": [[link_pdf]]}
+        servicio_sheets.spreadsheets().values().update(
+            spreadsheetId=ID_SHEET_CONTROL,
+            range=f"'historial'!I{fila_historial}",
+            valueInputOption="USER_ENTERED",
+            body=body
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error actualizando link PDF en Historial: {e}")
         return False

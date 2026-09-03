@@ -17,7 +17,9 @@ from src.services.google_service import (
     subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
     obtener_datos_empresas_desde_sheets, registrar_en_control,
     leer_sheet_seguro,
-    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia
+    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
+    buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
+    subir_pdf_a_drive, actualizar_link_pdf_historial
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -1042,13 +1044,25 @@ if modulo_actual == "📄 Generador de Certificados":
                 fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
                 datos_log = [fecha_registro, val_empresa, val_fundo, v_corr, val_cert, val_guia_completa, "", link_final, "", ""]
                             
-                if registrar_en_control(datos_log):
+                reg_res = registrar_en_control(datos_log)
+                if reg_res:
                     if link_drive:
                         st.session_state['msg_generado'] = False
                         st.session_state['msg_descargado'] = False
                         st.session_state['metricas_exitosos'] += 1
                         
                         st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
+                        
+                        # Guardar metadatos para el flujo de unión de expediente
+                        st.session_state['subido_drive_link'] = link_drive
+                        st.session_state['subido_drive_nombre'] = nombre_safe
+                        st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
+                        st.session_state['subido_carpeta_exacta'] = carpeta_exacta if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
+                        st.session_state['subido_tipo_flujo'] = tipo_flujo
+                        st.session_state['subido_tipo_cod'] = tipo_cod
+                        st.session_state['subido_v_corr'] = v_corr
+                        st.session_state['subido_destino_final'] = destino_final
+                        st.session_state['subido_guias_lista'] = guias_lista if 'guias_lista' in locals() else ([str(v_guia).strip().upper()] if str(v_guia).strip() else [])
                         
                         # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
                         if num_certificadas > 0:
@@ -1060,13 +1074,128 @@ if modulo_actual == "📄 Generador de Certificados":
                         if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
                             del st.session_state['guias_repo'] # Limpiar sesión
                             
-                        st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
+                        st.markdown(f"📄 **Certificado Generado:** [Ver Documento en Drive]({link_drive})")
                         
                         st.cache_data.clear() 
                     else:
                         st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
                 else:
                     st.error("❌ Falló la conexión con Sheets.")
+
+        # ====================================================================
+        # --- SECCIÓN: JUNTAR EXPEDIENTE EN UN SOLO PDF ---
+        # ====================================================================
+        if st.session_state.get('subido_drive_link'):
+            link_drive_actual = st.session_state['subido_drive_link']
+            st.divider()
+            st.markdown("### 📑 Unión de Expediente (Certificado + Guías)")
+            st.markdown(f"📄 **Certificado en Drive:** [👉 Abrir y Editar en Google Drive]({link_drive_actual})")
+            st.info("💡 Puedes abrir el documento con el enlace superior, revisarlo o editarlo directamente en Google Drive. Cuando estés listo, indica si deseas juntar todo en un solo PDF.")
+            
+            opcion_juntar = st.radio(
+                "¿Deseas juntar todo en un solo PDF (Certificado + Guía Remisión + Guía Transporte)?",
+                ["No", "Sí"],
+                horizontal=True,
+                key="radio_juntar_expediente"
+            )
+            
+            if opcion_juntar == "Sí":
+                drv, sht = obtener_servicios()
+                guias_a_buscar = st.session_state.get('subido_guias_lista', [])
+                
+                asociadas = buscar_guias_asociadas_para_unir(sht, drv, guias_a_buscar)
+                
+                guias_validas = [g for g in asociadas if g['valida']]
+                guias_erradas = [g for g in asociadas if not g['valida']]
+                
+                if guias_erradas:
+                    with st.expander("⚠️ Guías detectadas como ERRADAS (Omitidas del PDF)", expanded=True):
+                        for ge in guias_erradas:
+                            st.warning(f"🚫 **Omitida Fila {ge['fila']}**: Transporte `{ge['num_transporte']}` / Remisión `{ge['num_remision']}` — Observación: *'{ge['observacion']}'*")
+                
+                if not guias_validas:
+                    st.warning("⚠️ No se encontraron guías válidas asociadas en 'Registro_Guias' para las guías de este certificado.")
+                else:
+                    st.markdown("#### Documentos a consolidar:")
+                    g_val = guias_validas[0]
+                    
+                    c_doc1, c_doc2, c_doc3 = st.columns(3)
+                    with c_doc1:
+                        st.markdown(f"📄 **1. Certificado**\n\n*(Versión editada en Drive)*\n\n[🔗 Ver en Drive]({link_drive_actual})")
+                    with c_doc2:
+                        link_rem = g_val.get('link_remision') or "#"
+                        st.markdown(f"🚛 **2. Guía Remisión**\n\n`{g_val['num_remision']}`\n\n[🔗 Ver en Drive]({link_rem})")
+                    with c_doc3:
+                        link_trans = g_val.get('link_transporte') or "#"
+                        st.markdown(f"🚚 **3. Guía Transporte**\n\n`{g_val['num_transporte']}`\n\n[🔗 Ver en Drive]({link_trans})")
+                        
+                    # Nombre dinámico generado automáticamente según la operación y editable por el usuario
+                    tipo_c = st.session_state.get('subido_tipo_cod', 'COM')
+                    corr_c = str(st.session_state.get('subido_v_corr', '001')).strip()
+                    dest_c = str(st.session_state.get('subido_destino_final', '')).strip()
+                    if not dest_c or dest_c.upper() in ['NAN', 'NONE', '']:
+                        dest_c = "GENERAL"
+                    
+                    nombre_pdf_sugerido = f"CERT-{tipo_c}-{corr_c}-REM-TRAN-{dest_c}"
+                    
+                    nombre_pdf_final = st.text_input(
+                        "📌 Nombre del archivo PDF unificado:", 
+                        value=nombre_pdf_sugerido, 
+                        key="input_nombre_pdf_unido"
+                    )
+                    
+                    if st.button("🚀 Juntar Documentos y Guardar PDF Final", type="primary", key="btn_ejecutar_union"):
+                        with st.spinner("Descargando certificado editado de Drive y guías para unificarlas..."):
+                            try:
+                                # 1. Descargar el Word editado de Drive
+                                doc_editado_io = descargar_archivo_drive_por_id_o_nombre(drv, link_drive_actual)
+                                if not doc_editado_io:
+                                    doc_editado_bytes = st.session_state.word_buffer
+                                else:
+                                    doc_editado_bytes = doc_editado_io.getvalue()
+                                    
+                                # 2. Descargar Guía de Remisión
+                                arch_rem_io = None
+                                if g_val.get('archivo_remision'):
+                                    arch_rem_io = descargar_archivo_drive_por_id_o_nombre(drv, g_val['archivo_remision'])
+                                    
+                                # 3. Descargar Guía de Transporte
+                                arch_trans_io = None
+                                if g_val.get('archivo_transporte'):
+                                    arch_trans_io = descargar_archivo_drive_por_id_o_nombre(drv, g_val['archivo_transporte'])
+                                    
+                                # 4. Unir los 3 documentos en orden estricto: Certificado -> Remisión -> Transporte
+                                pdf_unido_bytes = unir_tres_documentos_pdf(doc_editado_bytes, arch_rem_io, arch_trans_io)
+                                
+                                # 5. Subir a Drive
+                                carpeta_dest = st.session_state.get('subido_carpeta_exacta')
+                                t_flujo = st.session_state.get('subido_tipo_flujo', 'Comercialización')
+                                link_pdf_drive = subir_pdf_a_drive(pdf_unido_bytes, nombre_pdf_final, t_flujo, carpeta_id=carpeta_dest)
+                                
+                                # 6. Actualizar pestaña 'Historial' Columna I ('Link pdf')
+                                fila_hist = st.session_state.get('subido_fila_historial')
+                                if fila_hist and link_pdf_drive:
+                                    actualizar_link_pdf_historial(sht, fila_hist, link_pdf_drive)
+                                
+                                st.session_state['pdf_unido_buffer'] = pdf_unido_bytes
+                                st.session_state['pdf_unido_link'] = link_pdf_drive
+                                st.session_state['pdf_unido_nombre'] = nombre_pdf_final
+                                st.success("✅ ¡Expediente PDF unificado y registrado exitosamente en Historial!")
+                                st.balloons()
+                            except Exception as err_union:
+                                st.error(f"❌ Error al unir documentos: {err_union}")
+                                
+                    if st.session_state.get('pdf_unido_link'):
+                        st.markdown(f"📄 **PDF Final Unificado:** [Ver en Google Drive]({st.session_state['pdf_unido_link']})")
+                        st.download_button(
+                            label=f"📩 Descargar {st.session_state.get('pdf_unido_nombre', 'Expediente')}.pdf",
+                            data=st.session_state.get('pdf_unido_buffer', b''),
+                            file_name=f"{st.session_state.get('pdf_unido_nombre', 'Expediente')}.pdf",
+                            mime="application/pdf",
+                            key="btn_descarga_pdf_unido"
+                        )
+            else:
+                st.info("Flujo finalizado. El certificado Word quedó registrado en Google Drive y Sheets.")
 
 elif modulo_actual == "🏢 Sigersol":
     with st.sidebar:

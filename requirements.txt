@@ -8,3 +8,4 @@ google-genai
 docxtpl
 python-docx
 python-dotenv
+pypdf
