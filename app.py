@@ -1045,7 +1045,8 @@ if modulo_actual == "📄 Generador de Certificados":
                 # --- 2. Fecha y armado de datos para Sheets ---
                 from datetime import datetime, timedelta
                 fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
-                datos_log = [fecha_registro, val_empresa, val_fundo, v_corr, val_cert, val_guia_completa, "", link_final, "", ""]
+                v_corr_real = st.session_state.get('v_corr') or str(v_corr)
+                datos_log = [fecha_registro, val_empresa, val_fundo, v_corr_real, val_cert, val_guia_completa, "", link_final, "", ""]
                             
                 reg_res = registrar_en_control(datos_log)
                 if reg_res:
@@ -1064,10 +1065,9 @@ if modulo_actual == "📄 Generador de Certificados":
                         st.session_state['subido_carpeta_exacta'] = carpeta_dest_safe
                         st.session_state['subido_tipo_flujo'] = tipo_flujo
                         tipo_cod_safe = st.session_state.get('tipo_cod') or ("COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER")
-                        v_corr_safe = st.session_state.get('v_corr') or str(v_corr)
                         destino_safe = st.session_state.get('destino_final') or (val_fundo if val_fundo and val_fundo != "NAN" else str(v_cli).strip().upper())
                         st.session_state['subido_tipo_cod'] = tipo_cod_safe
-                        st.session_state['subido_v_corr'] = v_corr_safe
+                        st.session_state['subido_v_corr'] = v_corr_real
                         st.session_state['subido_destino_final'] = destino_safe
                         st.session_state['subido_guias_lista'] = guias_lista if 'guias_lista' in locals() else ([str(v_guia).strip().upper()] if str(v_guia).strip() else [])
                         
@@ -1137,9 +1137,9 @@ if modulo_actual == "📄 Generador de Certificados":
                         st.markdown(f"🚚 **3. Guía Transporte**\n\n`{g_val['num_transporte']}`\n\n[🔗 Ver en Drive]({link_trans})")
                         
                     # Nombre dinámico generado automáticamente según la operación y editable por el usuario
-                    tipo_c = st.session_state.get('subido_tipo_cod', 'COM')
-                    corr_c = str(st.session_state.get('subido_v_corr', '001')).strip()
-                    dest_c = str(st.session_state.get('subido_destino_final', '')).strip()
+                    tipo_c = st.session_state.get('subido_tipo_cod') or st.session_state.get('tipo_cod', 'COM')
+                    corr_c = str(st.session_state.get('subido_v_corr') or st.session_state.get('v_corr', '001')).strip()
+                    dest_c = str(st.session_state.get('subido_destino_final') or st.session_state.get('destino_final', '')).strip()
                     if not dest_c or dest_c.upper() in ['NAN', 'NONE', '']:
                         dest_c = "GENERAL"
                     
@@ -1181,8 +1181,14 @@ if modulo_actual == "📄 Generador de Certificados":
                                 
                                 # 6. Actualizar pestaña 'Historial' Columna I ('Link pdf')
                                 fila_hist = st.session_state.get('subido_fila_historial')
-                                if fila_hist and link_pdf_drive:
-                                    actualizar_link_pdf_historial(sht, fila_hist, link_pdf_drive)
+                                if link_pdf_drive:
+                                    actualizar_link_pdf_historial(
+                                        sht, 
+                                        fila_hist, 
+                                        link_pdf_drive, 
+                                        correlativo=corr_c, 
+                                        link_doc=link_drive_actual
+                                    )
                                 
                                 st.session_state['pdf_unido_buffer'] = pdf_unido_bytes
                                 st.session_state['pdf_unido_link'] = link_pdf_drive

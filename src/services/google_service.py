@@ -993,19 +993,46 @@ def subir_pdf_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=No
         print(f"Error subiendo PDF a Drive: {e}") 
         return None
 
-def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf):
-    """Actualiza la columna I ('Link pdf') en la fila indicada de 'Historial'."""
-    if not servicio_sheets or not fila_historial or not link_pdf:
+def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, correlativo=None, link_doc=None):
+    """
+    Actualiza la columna I ('Link pdf') en la fila correspondiente de 'Historial'.
+    Si se pasa fila_historial válida, la usa directamente.
+    Si no, busca la fila por correlativo o link_doc para máxima precisión y evitar filas duplicadas.
+    """
+    if not servicio_sheets or not link_pdf:
         return False
     try:
-        body = {"values": [[link_pdf]]}
-        servicio_sheets.spreadsheets().values().update(
-            spreadsheetId=ID_SHEET_CONTROL,
-            range=f"'historial'!I{fila_historial}",
-            valueInputOption="USER_ENTERED",
-            body=body
-        ).execute()
-        return True
+        fila_destino = fila_historial if (fila_historial and isinstance(fila_historial, int) and fila_historial > 1) else None
+        
+        # Si no se tiene el número exacto de fila, buscar en la hoja
+        if not fila_destino:
+            r = servicio_sheets.spreadsheets().values().get(
+                spreadsheetId=ID_SHEET_CONTROL,
+                range="'historial'!A:I"
+            ).execute()
+            filas = r.get('values', [])
+            for idx, row in enumerate(filas):
+                num_fila = idx + 1
+                corr_row = str(row[3]).strip() if len(row) > 3 else ""
+                doc_row = str(row[7]).strip() if len(row) > 7 else ""
+                if link_doc and str(link_doc).strip() and str(link_doc).strip() in doc_row:
+                    fila_destino = num_fila
+                    break
+                if correlativo and str(correlativo).strip() and str(correlativo).strip() == corr_row:
+                    fila_destino = num_fila
+                    
+        if fila_destino:
+            body = {"values": [[link_pdf]]}
+            servicio_sheets.spreadsheets().values().update(
+                spreadsheetId=ID_SHEET_CONTROL,
+                range=f"'historial'!I{fila_destino}",
+                valueInputOption="USER_ENTERED",
+                body=body
+            ).execute()
+            return True
+        else:
+            print(f"No se pudo determinar la fila en Historial para correlativo={correlativo}, link={link_doc}")
+            return False
     except Exception as e:
         print(f"Error actualizando link PDF en Historial: {e}")
         return False
