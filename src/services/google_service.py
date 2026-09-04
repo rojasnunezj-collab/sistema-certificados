@@ -369,7 +369,7 @@ ID_SHEET_GUIAS = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 
 @st.cache_data(show_spinner=False, ttl=60)
 def obtener_catalogo_guias(_servicio_sheets):
-    """Extrae listado de empresas, mesas y fundos anidados para los selectbots."""
+    """Extrae listado de empresas, meses y fundos anidados para los selectboxes."""
     if not _servicio_sheets: return {}
     try:
         r = _servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_GUIAS, range="'Guias_recibidas'!A2:J").execute()
@@ -401,40 +401,26 @@ def obtener_catalogo_guias(_servicio_sheets):
                         mes_formateado = f"{nombre_mes} {anio}".strip()
                 elif fecha_str:
                     mes_formateado = fecha_str
-                
-                tipo_raw = str(fila[9]).strip() if len(fila) > 9 else ""
-                import unicodedata
-                tipo_norm = ''.join(c for c in unicodedata.normalize('NFD', tipo_raw) if unicodedata.category(c) != 'Mn').lower().replace(" ", "")
-                if "comercializacion" in tipo_norm:
-                    tipo_final = "Comercialización"
-                elif "disposicionfinal" in tipo_norm:
-                    tipo_final = "Disposición Final"
-                else:
-                    tipo_final = tipo_raw
 
                 if empresa:
                     if empresa not in catalogo:
                         catalogo[empresa] = {}
                     if mes_formateado not in catalogo[empresa]:
-                        catalogo[empresa][mes_formateado] = {}
+                        catalogo[empresa][mes_formateado] = set()
                     if fundo:
-                        if fundo not in catalogo[empresa][mes_formateado]:
-                            catalogo[empresa][mes_formateado][fundo] = set()
-                        if tipo_final:
-                            catalogo[empresa][mes_formateado][fundo].add(tipo_final)
+                        catalogo[empresa][mes_formateado].add(fundo)
                         
-        # Formatear sets a listas ordenadas
+        # Formatear sets a listas ordenadas de fundos
         for emp in catalogo:
             for mes in catalogo[emp]:
-                for fund in catalogo[emp][mes]:
-                    catalogo[emp][mes][fund] = sorted(list(catalogo[emp][mes][fund]))
+                catalogo[emp][mes] = sorted(list(catalogo[emp][mes]))
         return catalogo
     except Exception as e:
         print(f"Error catalogo guias: {e}")
         return {}
 
-def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo):
-    """Filtra y devuelve archivos a descargar, validando que no estén procesados."""
+def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo=None):
+    """Filtra y devuelve archivos a descargar, validando que no estén procesados y extrayendo el tipo de Columna J."""
     if not servicio_sheets: return []
     try:
         r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:J").execute()
@@ -442,6 +428,7 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo):
         
         resultados = []
         meses_es = {"01":"Enero", "02":"Febrero", "03":"Marzo", "04":"Abril", "05":"Mayo", "06":"Junio", "07":"Julio", "08":"Agosto", "09":"Septiembre", "10":"Octubre", "11":"Noviembre", "12":"Diciembre"}
+        import unicodedata
         
         for i, fila in enumerate(v):
             fila_real = i + 2 # Fila en excel (A2 en adelante)
@@ -464,20 +451,34 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo):
                     mes_formateado = fecha_str
                 
                 tipo_raw = str(fila[9]).strip() if len(fila) > 9 else ""
-                import unicodedata
                 tipo_norm = ''.join(c for c in unicodedata.normalize('NFD', tipo_raw) if unicodedata.category(c) != 'Mn').lower().replace(" ", "")
+                
+                # Regla automática desde Columna J:
+                # - Comercialización -> plantilla 'Comercialización'
+                # - Disposición Final / Servicios -> plantilla 'Disposición Final 1'
                 if "comercializacion" in tipo_norm:
-                    tipo_final = "Comercialización"
-                elif "disposicionfinal" in tipo_norm:
-                    tipo_final = "Disposición Final"
+                    tipo_detectado = "Comercialización"
+                    plantilla_flujo = "Comercialización"
+                elif "disposicion" in tipo_norm or "servicio" in tipo_norm or "final" in tipo_norm:
+                    tipo_detectado = "Disposición Final"
+                    plantilla_flujo = "Disposición Final 1"
                 else:
-                    tipo_final = tipo_raw
+                    tipo_detectado = tipo_raw if tipo_raw else "Comercialización"
+                    plantilla_flujo = "Comercialización" if "comercial" in tipo_detectado.lower() else "Disposición Final 1"
 
                 # Coincidir con los filtros y que no contenga marca de 'Nuevo' procesado
-                if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and tipo_final == tipo and f_archivo:
+                coincide_tipo = True if tipo is None else (tipo_detectado == tipo or tipo_raw == tipo)
+                if f_empresa == empresa and f_fundo == fundo and mes_formateado == mes and coincide_tipo and f_archivo:
                     if "✅ Nuevo" not in bitacora:
                         numero_guia = str(fila[1]).strip() if len(fila) > 1 else "S/N"
-                        resultados.append({"nombre": f_archivo, "fila": fila_real, "numero_guia": numero_guia})
+                        resultados.append({
+                            "nombre": f_archivo, 
+                            "fila": fila_real, 
+                            "numero_guia": numero_guia,
+                            "tipo_detectado": tipo_detectado,
+                            "tipo_flujo": plantilla_flujo,
+                            "tipo_raw": tipo_raw
+                        })
         return resultados
     except Exception as e:
         print(f"Error buscar guias: {e}")

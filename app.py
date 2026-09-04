@@ -220,7 +220,19 @@ if modulo_actual == "📄 Generador de Certificados":
             if not opciones_finales:
                 opciones_finales = ["Comercialización", "Disposición Final 1", "Disposición Final 2"]
                 
-        tipo_flujo = st.selectbox("Tipo de Certificado", options=opciones_finales)
+        if repositorio_masivo and st.session_state.get('repo_tipo_flujo'):
+            tipo_flujo_auto = st.session_state['repo_tipo_flujo']
+            idx_repo = opciones_finales.index(tipo_flujo_auto) if tipo_flujo_auto in opciones_finales else 0
+            tipo_flujo = st.selectbox(
+                "Tipo de Certificado", 
+                options=opciones_finales, 
+                index=idx_repo, 
+                disabled=True, 
+                help="Definido automáticamente desde la Columna J de las guías en el repositorio"
+            )
+            tipo_flujo = tipo_flujo_auto
+        else:
+            tipo_flujo = st.selectbox("Tipo de Certificado", options=opciones_finales)
 
         st.divider()
         if st.button("Limpiar Sesión Activa", key="btn_limpiar_cert", use_container_width=True):
@@ -258,7 +270,7 @@ if modulo_actual == "📄 Generador de Certificados":
             if not cat:
                 st.info("✅ ¡Todo está al día! No hay certificados pendientes por generar en el repositorio.")
             else:
-                c1, c2, c3, c4 = st.columns(4)
+                c1, c2, c3 = st.columns(3)
                 # Caja 1: Empresa
                 r_empresa = c1.selectbox("1. Empresa", options=list(cat.keys()), index=None, placeholder="Seleccione...", key="repo_empresa")
                 
@@ -267,25 +279,31 @@ if modulo_actual == "📄 Generador de Certificados":
                 r_mes = c2.selectbox("2. Mes", options=opciones_mes, index=None, placeholder="Seleccione...", disabled=not r_empresa, key="repo_mes")
                 
                 # Caja 3: Fundo
-                mes_data = cat.get(r_empresa, {}).get(r_mes, {}) if r_mes else {}
-                opciones_fundo = list(mes_data.keys()) if isinstance(mes_data, dict) else (mes_data if isinstance(mes_data, list) else [])
+                opciones_fundo = cat.get(r_empresa, {}).get(r_mes, []) if (r_empresa and r_mes) else []
                 r_fundo = c3.selectbox("3. Fundo/Planta", options=opciones_fundo, index=None, placeholder="Seleccione...", disabled=not r_mes, key="repo_fundo")
                 
-                # Caja 4: Tipo (NUEVA)
-                fundo_data = mes_data.get(r_fundo, []) if isinstance(mes_data, dict) and r_fundo else []
-                opciones_tipo = list(fundo_data) if fundo_data else []
-                r_tipo = c4.selectbox("4. Tipo (Col. J)", options=opciones_tipo, index=None, placeholder="Seleccione...", disabled=not r_fundo, key="repo_tipo")
-                
-                if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes and r_tipo)):
-                    res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes, r_tipo)
+                if st.button("🔍 Buscar Guías en Repositorio", disabled=not (r_empresa and r_fundo and r_mes)):
+                    res = buscar_guias_repositorio(sht, r_empresa, r_fundo, r_mes)
                     if res:
                         st.success(f"✅ Se encontraron {len(res)} guías nuevas para procesar.")
                         st.session_state['guias_repo'] = res
-                        st.session_state['repo_tipo_seleccionado'] = r_tipo
+                        
+                        # Auto-detección desde Columna J de las guías encontradas:
+                        tipo_detectado = res[0].get('tipo_detectado', 'Comercialización')
+                        tipo_flujo_auto = res[0].get('tipo_flujo', 'Comercialización')
+                        st.session_state['repo_tipo_detectado'] = tipo_detectado
+                        st.session_state['repo_tipo_flujo'] = tipo_flujo_auto
+                        st.session_state['repo_tipo_seleccionado'] = tipo_detectado
+                        st.rerun()
                     else:
                         st.warning("No se encontraron guías pendientes para estos filtros.")
                         if 'guias_repo' in st.session_state: del st.session_state['guias_repo']
+                        if 'repo_tipo_detectado' in st.session_state: del st.session_state['repo_tipo_detectado']
+                        if 'repo_tipo_flujo' in st.session_state: del st.session_state['repo_tipo_flujo']
                         if 'repo_tipo_seleccionado' in st.session_state: del st.session_state['repo_tipo_seleccionado']
+                        
+                if st.session_state.get('repo_tipo_flujo'):
+                    st.info(f"📋 **Tipo detectado (Columna J):** {st.session_state.get('repo_tipo_detectado')} ➔ **Plantilla:** {st.session_state.get('repo_tipo_flujo')}")
                         
                 if st.session_state.get('guias_repo'):
                     opciones_nombres = [r['nombre'] for r in st.session_state['guias_repo']]
@@ -729,11 +747,14 @@ if modulo_actual == "📄 Generador de Certificados":
         
         # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
         if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
-            if locals().get('repositorio_masivo', False) and st.session_state.get('repo_tipo_seleccionado'):
-                if st.session_state['repo_tipo_seleccionado'] == "Comercialización":
-                    tipo_flujo = "Comercialización"
-                elif st.session_state['repo_tipo_seleccionado'] == "Disposición Final":
-                    tipo_flujo = "Disposición Final 1"
+            if locals().get('repositorio_masivo', False):
+                if st.session_state.get('repo_tipo_flujo'):
+                    tipo_flujo = st.session_state['repo_tipo_flujo']
+                elif st.session_state.get('repo_tipo_seleccionado'):
+                    if "comercial" in str(st.session_state['repo_tipo_seleccionado']).lower():
+                        tipo_flujo = "Comercialización"
+                    else:
+                        tipo_flujo = "Disposición Final 1"
 
             drive, _ = obtener_servicios()
             if drive:
