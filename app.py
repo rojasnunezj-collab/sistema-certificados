@@ -177,13 +177,54 @@ if modulo_actual == "📄 Generador de Certificados":
     with st.sidebar:
         st.header("Configuración de Flujo")
         
-        # 1. Controles principales (4 espacios de indentación)
-        es_modelo = st.toggle("📝 Generar como Certificado Modelo", value=False)
-        repositorio_masivo = st.toggle("🗄️ Repositorio Masivo", value=False)
-        modo_manual = st.toggle("🔴 Llenado Manual (Sin PDF)", value=False)
+        # --- Lógica de Exclusión Mutua para Modalidades ---
+        if 'toggle_modelo' not in st.session_state:
+            st.session_state['toggle_modelo'] = False
+        if 'toggle_repo' not in st.session_state:
+            st.session_state['toggle_repo'] = False
+        if 'toggle_manual' not in st.session_state:
+            st.session_state['toggle_manual'] = False
+
+        def _limpiar_temporales_flujo():
+            for k in ['guias_repo', 'repo_tipo_flujo', 'repo_tipo_detectado', 'procesar_ya',
+                      'subido_drive_link', 'subido_drive_id', 'subido_drive_nombre',
+                      'subido_fila_historial', 'subido_carpeta_exacta', 'subido_tipo_flujo',
+                      'subido_tipo_cod', 'subido_v_corr', 'subido_destino_final', 'subido_guias_lista',
+                      'pdf_unido_buffer', 'pdf_unido_link', 'pdf_unido_nombre']:
+                if k in st.session_state:
+                    del st.session_state[k]
+
+        def _on_change_modelo():
+            if st.session_state.get('toggle_modelo'):
+                st.session_state['toggle_repo'] = False
+                st.session_state['toggle_manual'] = False
+            _limpiar_temporales_flujo()
+
+        def _on_change_repo():
+            if st.session_state.get('toggle_repo'):
+                st.session_state['toggle_modelo'] = False
+                st.session_state['toggle_manual'] = False
+            _limpiar_temporales_flujo()
+
+        def _on_change_manual():
+            if st.session_state.get('toggle_manual'):
+                st.session_state['toggle_modelo'] = False
+                st.session_state['toggle_repo'] = False
+            _limpiar_temporales_flujo()
+
+        # 1. Controles principales mutuamente excluyentes
+        es_modelo = st.toggle("📝 Generar como Certificado Modelo", key="toggle_modelo", on_change=_on_change_modelo)
+        repositorio_masivo = st.toggle("🗄️ Repositorio Masivo", key="toggle_repo", on_change=_on_change_repo)
+        modo_manual = st.toggle("🔴 Llenado Manual (Sin PDF)", key="toggle_manual", on_change=_on_change_manual)
         
         if es_modelo:
             st.info("💡 MODO MODELO ACTIVO: Se usarán las plantillas de prueba.")
+        elif repositorio_masivo:
+            st.info("🗄️ MODO REPOSITORIO ACTIVO: Guías desde Google Sheets.")
+        elif modo_manual:
+            st.info("🔴 MODO MANUAL ACTIVO: Llenado de datos sin PDF.")
+        else:
+            st.caption("📄 Modo Estándar: Carga y procesamiento OCR de PDFs.")
         
         st.divider()
         
