@@ -19,7 +19,8 @@ from src.services.google_service import (
     leer_sheet_seguro,
     obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
     buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
-    subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive
+    subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
+    obtener_catalogo_servicios_por_categoria
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -538,9 +539,24 @@ if modulo_actual == "📄 Generador de Certificados":
             st.session_state.repo = {
                 "emisores": leer_sheet_seguro("EMPRESAS"),
                 "clientes": leer_sheet_seguro("CLIENTES"),
-                "servicios": leer_sheet_seguro("COMERCIALIZACION")
+                "servicios": leer_sheet_seguro("SERVICIOS")
             }
         repo = st.session_state.repo
+
+        # --- CATÁLOGO DE SERVICIOS POR PLANTILLA (COMERCIALIZACIÓN vs DISPOSICIÓN FINAL) ---
+        sec_actual = "COMERCIALIZACION" if "comercializa" in str(tipo_flujo).strip().lower() else "SERVICIOS"
+        otra_sec = "SERVICIOS" if sec_actual == "COMERCIALIZACION" else "COMERCIALIZACION"
+        catalogo_sec = obtener_catalogo_servicios_por_categoria(repo.get('servicios'))
+
+        # Opciones prioritarias de la plantilla actual + resto de opciones disponibles
+        opciones_tit = catalogo_sec[sec_actual]["titulos"] + [t for t in catalogo_sec[otra_sec]["titulos"] if t not in catalogo_sec[sec_actual]["titulos"]]
+        if not opciones_tit: opciones_tit = ["CERTIFICADO DE MANEJO"]
+
+        opciones_serv = catalogo_sec[sec_actual]["servicios"] + [s for s in catalogo_sec[otra_sec]["servicios"] if s not in catalogo_sec[sec_actual]["servicios"]]
+        if not opciones_serv: opciones_serv = ["Sin Datos"]
+
+        opciones_res = catalogo_sec[sec_actual]["residuos"] + [r for r in catalogo_sec[otra_sec]["residuos"] if r not in catalogo_sec[sec_actual]["residuos"]]
+        if not opciones_res: opciones_res = ["Sin Datos"]
 
         # 2. COLUMNAS: Partimos la pantalla en 2 mitades
         c_a, c_b = st.columns(2, gap="large")
@@ -601,7 +617,8 @@ if modulo_actual == "📄 Generador de Certificados":
             # TÍTULO: Va exactamente debajo del registro del Emisor
             v_tit = st.selectbox(
                 "Título", 
-                repo['servicios'].iloc[:,0].unique() if not repo['servicios'].empty else ["CERTIFICADO DE MANEJO"]
+                options=opciones_tit,
+                key=f"sb_titulo_{tipo_flujo}"
             )
                 
             # --- CONEXIÓN DE VARIABLES PARA EL WORD ---
@@ -646,11 +663,13 @@ if modulo_actual == "📄 Generador de Certificados":
             
             v_serv = st.selectbox(
                 "Servicio", 
-                repo['servicios'].iloc[:,1].unique() if not repo['servicios'].empty else ["Sin Datos"]
+                options=opciones_serv,
+                key=f"sb_servicio_{tipo_flujo}"
             )
             v_res = st.selectbox(
                 "Residuo", 
-                repo['servicios'].iloc[:,2].unique() if not repo['servicios'].empty else ["Sin Datos"]
+                options=opciones_res,
+                key=f"sb_residuo_{tipo_flujo}"
             )
             
 

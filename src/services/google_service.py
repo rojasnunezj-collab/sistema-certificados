@@ -1065,3 +1065,39 @@ def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, cor
     except Exception as e:
         print(f"Error actualizando link PDF en Historial: {e}")
         return False
+
+def obtener_catalogo_servicios_por_categoria(df_servicios):
+    """
+    Parsea el DataFrame de la pestaña 'SERVICIOS' agrupando las opciones por categoría
+    (COMERCIALIZACION vs SERVICIOS). Ignora filas de cabecera repetidas y limpia textos.
+    """
+    import pandas as pd
+    secciones = {
+        "COMERCIALIZACION": {"titulos": [], "servicios": [], "residuos": []},
+        "SERVICIOS": {"titulos": [], "servicios": [], "residuos": []}
+    }
+    if df_servicios is None or df_servicios.empty:
+        return secciones
+
+    KEYWORDS_HEADER = ["COMERCIALIZACION", "COMERCIALIZACIÓN", "SERVICIOS", "DISPOSICION FINAL", "DISPOSICIÓN FINAL"]
+    seccion_actual = "COMERCIALIZACION"
+
+    for _, row in df_servicios.iterrows():
+        c0 = str(row.iloc[0]).strip() if len(row) > 0 and pd.notna(row.iloc[0]) else ""
+        c1 = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else ""
+        c2 = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else ""
+
+        c0_norm = c0.upper().replace("Ó", "O").replace("Í", "I").replace("Á", "A")
+        if c0_norm in [k.replace("Ó", "O").replace("Í", "I").replace("Á", "A") for k in KEYWORDS_HEADER]:
+            seccion_actual = "COMERCIALIZACION" if "COMERC" in c0_norm else "SERVICIOS"
+            continue
+
+        if seccion_actual in secciones:
+            if c0 and c0 not in secciones[seccion_actual]["titulos"]:
+                secciones[seccion_actual]["titulos"].append(c0)
+            if c1 and c1 not in secciones[seccion_actual]["servicios"]:
+                secciones[seccion_actual]["servicios"].append(c1)
+            if c2 and c2 not in secciones[seccion_actual]["residuos"]:
+                secciones[seccion_actual]["residuos"].append(c2)
+
+    return secciones
