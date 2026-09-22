@@ -19,7 +19,7 @@ from src.services.google_service import (
     leer_sheet_seguro,
     obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
     buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
-    subir_pdf_a_drive, actualizar_link_pdf_historial
+    subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -1080,6 +1080,7 @@ if modulo_actual == "📄 Generador de Certificados":
                         
                         # Guardar metadatos para el flujo de unión de expediente
                         st.session_state['subido_drive_link'] = link_drive
+                        st.session_state['subido_drive_id'] = extraer_id_drive(link_drive)
                         st.session_state['subido_drive_nombre'] = nombre_safe
                         st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
                         carpeta_dest_safe = CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
@@ -1117,8 +1118,7 @@ if modulo_actual == "📄 Generador de Certificados":
             link_drive_actual = st.session_state['subido_drive_link']
             st.divider()
             st.markdown("### 📑 Unión de Expediente (Certificado + Guías)")
-            st.markdown(f"📄 **Certificado en Drive:** [👉 Abrir y Editar en Google Drive]({link_drive_actual})")
-            st.info("💡 Puedes abrir el documento con el enlace superior, revisarlo o editarlo directamente en Google Drive. Cuando estés listo, indica si deseas juntar todo en un solo PDF.")
+            st.info("💡 Puedes abrir el documento con el enlace superior para revisarlo o editarlo directamente en Google Drive. Recuerda verificar que Google Docs indique **'Guardado en Drive'** antes de proceder a juntar los documentos.")
             
             opcion_juntar = st.radio(
                 "¿Deseas juntar todo en un solo PDF (Certificado + Guía Remisión + Guía Transporte)?",
@@ -1176,11 +1176,14 @@ if modulo_actual == "📄 Generador de Certificados":
                         with st.spinner("Descargando certificado editado de Drive y guías para unificarlas..."):
                             try:
                                 # 1. Descargar el Word editado de Drive
-                                doc_editado_io = descargar_archivo_drive_por_id_o_nombre(drv, link_drive_actual)
+                                id_o_link_cert = st.session_state.get('subido_drive_id') or link_drive_actual
+                                doc_editado_io = descargar_archivo_drive_por_id_o_nombre(drv, id_o_link_cert)
                                 if not doc_editado_io:
+                                    st.warning("⚠️ No se pudo descargar la versión de Drive. Se usará la copia local generada inicialmente.")
                                     doc_editado_bytes = st.session_state.word_buffer
                                 else:
                                     doc_editado_bytes = doc_editado_io.getvalue()
+                                    st.toast("✅ Versión actualizada del certificado descargada de Google Drive.")
                                     
                                 # 2. Descargar Guía de Remisión
                                 arch_rem_io = None

@@ -484,6 +484,35 @@ def buscar_guias_repositorio(servicio_sheets, empresa, fundo, mes, tipo=None):
         print(f"Error buscar guias: {e}")
         return []
 
+def extraer_id_drive(valor):
+    """
+    Extrae de forma robusta el ID de un archivo o carpeta de Google Drive / Google Docs / Sheets.
+    Admite URLs de tipo docs.google.com/document/d/<id>, drive.google.com/file/d/<id>,
+    drive.google.com/open?id=<id>, o strings de ID directos.
+    """
+    import re
+    if not valor:
+        return None
+    val_str = str(valor).strip()
+    # Si es directamente un ID de Drive (25 a 65 caracteres alfanuméricos, guiones o guiones bajos)
+    if re.match(r'^[a-zA-Z0-9_-]{25,65}$', val_str):
+        return val_str
+    
+    patrones = [
+        r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
+        r'docs\.google\.com/(?:document|spreadsheets|presentation)/d/([a-zA-Z0-9_-]+)',
+        r'drive\.google\.com/open\?id=([a-zA-Z0-9_-]+)',
+        r'drive\.google\.com/uc\?.*?id=([a-zA-Z0-9_-]+)',
+        r'[?&]id=([a-zA-Z0-9_-]+)',
+        r'/d/([a-zA-Z0-9_-]+)'
+    ]
+    for pat in patrones:
+        m = re.search(pat, val_str)
+        if m:
+            return m.group(1)
+            
+    return val_str
+
 def descargar_guias_drive(servicio_drive, nombres_archivos):
     """Busca y descarga los archivos del Drive, los devuelve en memoria."""
     import io
@@ -494,10 +523,10 @@ def descargar_guias_drive(servicio_drive, nombres_archivos):
     
     archivos_memoria = []
     for nombre in nombres_archivos:
-        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', nombre)
+        archivo_id = extraer_id_drive(nombre)
+        es_posible_id = (archivo_id != nombre) or (re.match(r'^[a-zA-Z0-9_-]{25,65}$', str(nombre).strip()) is not None)
         try:
-            if url_match:
-                archivo_id = url_match.group(1)
+            if es_posible_id:
                 meta = servicio_drive.files().get(fileId=archivo_id, fields='name, mimeType', supportsAllDrives=True).execute()
                 archivo_name = meta.get('name', 'archivo_descargado')
                 mime_type = meta.get('mimeType', '')
@@ -694,9 +723,9 @@ def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
     if not servicio_drive or not nombre_archivo:
         return None
     try:
-        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', str(nombre_archivo))
-        if url_match:
-            archivo_id = url_match.group(1)
+        archivo_id = extraer_id_drive(nombre_archivo)
+        es_posible_id = (archivo_id != nombre_archivo) or (re.match(r'^[a-zA-Z0-9_-]{25,65}$', str(nombre_archivo).strip()) is not None)
+        if es_posible_id:
             meta = servicio_drive.files().get(fileId=archivo_id, fields='webViewLink', supportsAllDrives=True).execute()
             return meta.get('webViewLink')
         else:
@@ -784,13 +813,11 @@ def buscar_guias_asociadas_para_unir(sheets_service, drive_service, guias_lista)
 def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
     """Descarga un archivo específico de Drive (exporta a Word/PDF si es Google Doc)."""
     import io
-    import re
     from googleapiclient.http import MediaIoBaseDownload
     if not servicio_drive or not file_id_o_nombre:
         return None
     try:
-        url_match = re.search(r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)', str(file_id_o_nombre))
-        archivo_id = url_match.group(1) if url_match else str(file_id_o_nombre).strip()
+        archivo_id = extraer_id_drive(file_id_o_nombre)
         
         try:
             meta = servicio_drive.files().get(fileId=archivo_id, fields='name, mimeType', supportsAllDrives=True).execute()
@@ -810,10 +837,11 @@ def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
             fh.seek(0)
             fh.name = archivo_name
             return fh
-        except Exception:
-            archivos = descargar_guias_drive(servicio_drive, [archivo_id])
+        except Exception as e_get:
+            archivos = descargar_guias_drive(servicio_drive, [str(file_id_o_nombre)])
             if archivos:
                 return archivos[0]
+            print(f"Error descargando por ID {archivo_id}: {e_get}")
     except Exception as e:
         print(f"Error descargando {file_id_o_nombre}: {e}")
     return None
