@@ -1,8 +1,11 @@
-﻿secretoslocal.json
+secretoslocal.json
 credentials.json
 token.json
 .env
 .streamlit/
 __pycache__/
+**/__pycache__/
+*.pyc
 app_env/
+.venv/
 Login_sistema.json

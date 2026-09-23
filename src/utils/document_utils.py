@@ -144,3 +144,34 @@ def inyectar_tabla_en_docx(doc_io, data_items):
     new_buffer = io.BytesIO()
     doc.save(new_buffer)
     return new_buffer.getvalue()
+
+def sustituir_certificado_en_pdf(pdf_unificado_bytes, nuevo_cert_pdf_bytes, num_paginas_reemplazar=1):
+    """
+    Sustituye la(s) primera(s) página(s) de un PDF unificado (el certificado desactualizado)
+    por las páginas del nuevo certificado, conservando intactas todas las páginas posteriores (las guías).
+    
+    :param pdf_unificado_bytes: bytes del PDF consolidado original.
+    :param nuevo_cert_pdf_bytes: bytes del nuevo certificado en formato PDF.
+    :param num_paginas_reemplazar: número de páginas iniciales a sustituir (por defecto 1).
+    :return: bytes del nuevo PDF unificado.
+    """
+    from pypdf import PdfReader, PdfWriter
+
+    reader_unido = PdfReader(io.BytesIO(pdf_unificado_bytes))
+    reader_nuevo = PdfReader(io.BytesIO(nuevo_cert_pdf_bytes))
+    writer = PdfWriter()
+
+    # 1. Agregar todas las páginas del nuevo certificado
+    for p in reader_nuevo.pages:
+        writer.add_page(p)
+
+    # 2. Agregar las páginas restantes del PDF unificado original (las guías)
+    total_unido = len(reader_unido.pages)
+    paginas_a_saltar = min(num_paginas_reemplazar, total_unido)
+    for p in reader_unido.pages[paginas_a_saltar:]:
+        writer.add_page(p)
+
+    out_io = io.BytesIO()
+    writer.write(out_io)
+    out_io.seek(0)
+    return out_io.getvalue()

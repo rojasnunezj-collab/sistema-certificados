@@ -20,11 +20,13 @@ from src.services.google_service import (
     obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
     buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
     subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
-    obtener_catalogo_servicios_por_categoria
+    obtener_catalogo_servicios_por_categoria,
+    convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
+    sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
-from src.utils.document_utils import inyectar_tabla_en_docx
+from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
     limpiar_descripcion, formatear_guia, obtener_fin_de_mes,
@@ -162,7 +164,7 @@ if 'datos_extraidos' not in st.session_state:
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
+modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🔄 Actualizar Expediente", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
 
 if modulo_actual == "📄 Generador de Certificados":
     # ====================================================================
@@ -1293,6 +1295,206 @@ if modulo_actual == "📄 Generador de Certificados":
                         )
             else:
                 st.info("Flujo finalizado. El certificado Word quedó registrado en Google Drive y Sheets.")
+
+elif modulo_actual == "🔄 Actualizar Expediente":
+    st.title("🔄 Actualizar y Regenerar Expediente")
+    st.info("💡 Modifica un certificado emitido, reemplázalo quirúrgicamente en el PDF consolidado conservando las guías originales intactas, y sincroniza los cambios en Google Drive y la hoja Historial.")
+
+    tab_historial, tab_manual = st.tabs(["📑 Desde Historial (Automático con Drive)", "⚡ Reemplazo Directo (Carga de Archivos)"])
+
+    drv, sht = obtener_servicios()
+
+    with tab_historial:
+        st.markdown("### 1. Localizar Certificado en Historial")
+        c_busq1, c_busq2 = st.columns([3, 1])
+        with c_busq1:
+            corr_busqueda = st.text_input("Ingrese N° Correlativo:", placeholder="Ej: 045, 001...", key="input_corr_actualizar")
+        with c_busq2:
+            st.write("")
+            st.write("")
+            btn_buscar_corr = st.button("🔍 Buscar en Historial", type="primary", use_container_width=True, key="btn_buscar_historial")
+
+        if btn_buscar_corr and corr_busqueda:
+            with st.spinner("Buscando en la hoja Historial..."):
+                hallados = buscar_datos_certificado_en_historial(sht, corr_busqueda)
+                st.session_state['act_certificados_encontrados'] = hallados
+                if not hallados:
+                    st.warning(f"⚠️ No se encontró ningún certificado con el correlativo '{corr_busqueda}' en Historial.")
+                else:
+                    st.success(f"✅ Se encontraron {len(hallados)} registro(s) para el correlativo '{corr_busqueda}'.")
+
+        hallados = st.session_state.get('act_certificados_encontrados', [])
+        if hallados:
+            if len(hallados) > 1:
+                opciones_sel = [f"Fila {h['fila']} | {h['fecha']} | {h['empresa']} | {h['fundo']} | Guías: {h['guias']}" for h in hallados]
+                sel_idx = st.selectbox("Seleccione el certificado específico a editar:", range(len(hallados)), format_func=lambda i: opciones_sel[i], key="sel_cert_multiple")
+                cert_sel = hallados[sel_idx]
+            else:
+                cert_sel = hallados[0]
+
+            st.divider()
+            st.markdown("### 2. Información del Certificado Emitido")
+            col_info1, col_info2, col_info3 = st.columns(3)
+            with col_info1:
+                st.markdown(f"🏢 **Empresa:** {cert_sel['empresa']}")
+                st.markdown(f"🌱 **Fundo / Destino:** {cert_sel['fundo']}")
+                st.markdown(f"📅 **Fecha Emisión:** {cert_sel['fecha']}")
+            with col_info2:
+                st.markdown(f"🏷️ **Tipo Certificado:** {cert_sel['tipo_cert']}")
+                st.markdown(f"📌 **Correlativo:** `{cert_sel['correlativo']}`")
+                st.markdown(f"🚛 **Guías Asociadas:** `{cert_sel['guias']}`")
+            with col_info3:
+                link_doc_actual = cert_sel['link_doc']
+                link_pdf_actual = cert_sel['link_pdf']
+                obs_actual = cert_sel['observacion']
+                if link_doc_actual:
+                    st.markdown(f"📄 **Word Original:** [Editar en Google Docs]({link_doc_actual})")
+                else:
+                    st.caption("📄 Word: Sin enlace en Historial")
+                if link_pdf_actual:
+                    st.markdown(f"📑 **PDF Unificado Actual:** [Ver en Drive]({link_pdf_actual})")
+                else:
+                    st.caption("📑 PDF: Sin enlace en Historial")
+                if obs_actual:
+                    st.caption(f"📝 *Obs previa:* {obs_actual}")
+
+            st.divider()
+            st.markdown("### 3. Edición del Certificado")
+            st.info("""
+            📝 **Instrucciones para editar:**
+            - **Opción A (Recomendada):** Haz clic en el enlace superior **[Editar en Google Docs]** para abrir el archivo Word en Google Docs, corrige los datos necesarios (pesos, placas, nombres, etc.) y espera a que indique **'Guardado en Drive'**.
+            - **Opción B (Local):** Si prefieres editarlo en tu computadora o ya tienes un archivo Word/PDF corregido, súbelo en el recuadro a continuación:
+            """)
+            
+            subida_local_doc = st.file_uploader(
+                "📂 (Opcional) Cargar Word (.docx) o PDF corregido desde tu PC:",
+                type=["docx", "pdf"],
+                key="uploader_cert_corregido_hist"
+            )
+
+            st.divider()
+            st.markdown("### 4. Regenerar y Publicar Expediente")
+            
+            obs_adicional = st.text_input("Observación o motivo del cambio (opcional):", placeholder="Ej: Corrección de placa de vehículo", key="input_motivo_edicion")
+
+            if st.button("🚀 Regenerar Expediente y Actualizar Historial", type="primary", use_container_width=True, key="btn_ejecutar_actualizacion_hist"):
+                if not cert_sel['link_pdf']:
+                    st.error("❌ El registro seleccionado no tiene un enlace de PDF unificado ('Link pdf') en Historial para reemplazar la carátula.")
+                else:
+                    with st.spinner("⏳ Descargando documentos y ejecutando sustitución quirúrgica..."):
+                        try:
+                            # 1. Obtener los bytes del nuevo certificado en PDF
+                            if subida_local_doc:
+                                nombre_subido = subida_local_doc.name.lower()
+                                if nombre_subido.endswith('.pdf'):
+                                    nuevo_cert_pdf_bytes = subida_local_doc.getvalue()
+                                else:
+                                    nuevo_cert_pdf_bytes = convertir_docx_a_pdf(subida_local_doc.getvalue())
+                                st.toast("✅ Certificado cargado desde archivo local.")
+                            else:
+                                if not cert_sel['link_doc']:
+                                    raise Exception("No se encontró el enlace del Word en Drive ni se subió un archivo local.")
+                                doc_drive_io = descargar_archivo_drive_por_id_o_nombre(drv, cert_sel['link_doc'])
+                                if not doc_drive_io:
+                                    raise Exception("No se pudo descargar el documento Word editado desde Google Drive.")
+                                nuevo_cert_pdf_bytes = convertir_docx_a_pdf(doc_drive_io.getvalue())
+                                st.toast("✅ Versión actualizada del Word descargada de Google Drive.")
+
+                            if not nuevo_cert_pdf_bytes:
+                                raise Exception("Falló la conversión del nuevo certificado a PDF.")
+
+                            # 2. Descargar el PDF unificado actual de Drive
+                            pdf_unido_io = descargar_archivo_drive_por_id_o_nombre(drv, cert_sel['link_pdf'])
+                            if not pdf_unido_io:
+                                raise Exception("No se pudo descargar el PDF consolidado existente desde Google Drive.")
+
+                            pdf_unido_existente_bytes = pdf_unido_io.getvalue()
+
+                            # 3. Sustituir quirúrgicamente la carátula conservando las guías
+                            pdf_actualizado_bytes = sustituir_certificado_en_pdf(
+                                pdf_unido_existente_bytes, 
+                                nuevo_cert_pdf_bytes, 
+                                num_paginas_reemplazar=1
+                            )
+
+                            # 4. Actualizar en Google Drive (sobreescritura in-place para conservar el mismo link público)
+                            file_id_pdf = extraer_id_drive(cert_sel['link_pdf'])
+                            nombre_sug = f"CERT-{cert_sel['tipo_cert']}-{cert_sel['correlativo']}-ACTUALIZADO.pdf"
+                            
+                            nuevo_link_drive = sobrescribir_o_subir_pdf_drive(
+                                drv, 
+                                file_id_pdf, 
+                                pdf_actualizado_bytes, 
+                                nombre_archivo=nombre_sug, 
+                                tipo_flujo=cert_sel['tipo_cert']
+                            )
+
+                            # 5. Registrar auditoría en la pestaña 'Historial'
+                            usuario_editor = st.session_state.get('usuario_email', 'Usuario')
+                            link_para_historial = nuevo_link_drive or cert_sel['link_pdf']
+                            registrar_edicion_en_historial(
+                                sht, 
+                                cert_sel['fila'], 
+                                link_para_historial, 
+                                usuario_editor=usuario_editor, 
+                                obs_extra=obs_adicional
+                            )
+
+                            st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes
+                            st.session_state['act_pdf_final_link'] = link_para_historial
+                            st.session_state['act_pdf_final_nombre'] = nombre_sug
+                            
+                            st.cache_data.clear()
+                            st.success("✅ ¡Expediente actualizado exitosamente en Google Drive y registrado en la pestaña Historial!")
+                            st.balloons()
+                        except Exception as e_proc:
+                            st.error(f"❌ Error durante la actualización del expediente: {e_proc}")
+
+            if st.session_state.get('act_pdf_final_link'):
+                st.markdown(f"📄 **Expediente PDF Actualizado:** [Ver en Google Drive]({st.session_state['act_pdf_final_link']})")
+                st.download_button(
+                    label=f"📩 Descargar {st.session_state.get('act_pdf_final_nombre', 'Expediente_Actualizado.pdf')}",
+                    data=st.session_state.get('act_pdf_final_bytes', b''),
+                    file_name=st.session_state.get('act_pdf_final_nombre', 'Expediente_Actualizado.pdf'),
+                    mime="application/pdf",
+                    key="btn_descarga_act_hist"
+                )
+
+    with tab_manual:
+        st.markdown("### ⚡ Herramienta Rápida de Sustitución (Archivos Locales)")
+        st.caption("Útil si tienes el PDF del expediente y el nuevo certificado guardados en tu computadora y no requieres consultar Drive.")
+        
+        c_m1, c_m2 = st.columns(2)
+        with c_m1:
+            pdf_expediente_file = st.file_uploader("1. Sube el PDF consolidado existente (con las guías):", type=["pdf"], key="up_pdf_expediente_manual")
+        with c_m2:
+            nuevo_cert_file = st.file_uploader("2. Sube el nuevo Certificado (.docx o .pdf):", type=["docx", "pdf"], key="up_nuevo_cert_manual")
+
+        if pdf_expediente_file and nuevo_cert_file:
+            nombre_descarga = f"EXPEDIENTE-ACTUALIZADO-{pdf_expediente_file.name}"
+            if st.button("⚡ Sustituir Certificado y Generar PDF", type="primary", key="btn_swap_manual"):
+                with st.spinner("Ensamblando nuevo expediente..."):
+                    try:
+                        if nuevo_cert_file.name.lower().endswith('.pdf'):
+                            c_bytes = nuevo_cert_file.getvalue()
+                        else:
+                            c_bytes = convertir_docx_a_pdf(nuevo_cert_file.getvalue())
+
+                        pdf_res = sustituir_certificado_en_pdf(pdf_expediente_file.getvalue(), c_bytes, num_paginas_reemplazar=1)
+                        st.session_state['manual_swap_bytes'] = pdf_res
+                        st.session_state['manual_swap_name'] = nombre_descarga
+                        st.success("✅ ¡Expediente ensamblado con éxito! La página 1 fue reemplazada y las guías se mantuvieron intactas.")
+                    except Exception as err_m:
+                        st.error(f"❌ Error procesando archivos: {err_m}")
+
+            if st.session_state.get('manual_swap_bytes'):
+                st.download_button(
+                    label=f"📩 Descargar {st.session_state.get('manual_swap_name', 'Expediente_Actualizado.pdf')}",
+                    data=st.session_state.get('manual_swap_bytes', b''),
+                    file_name=st.session_state.get('manual_swap_name', 'Expediente_Actualizado.pdf'),
+                    mime="application/pdf",
+                    key="btn_descarga_swap_manual"
+                )
 
 elif modulo_actual == "🏢 Sigersol":
     with st.sidebar:

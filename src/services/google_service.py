@@ -1100,4 +1100,115 @@ def obtener_catalogo_servicios_por_categoria(df_servicios):
             if c2 and c2 not in secciones[seccion_actual]["residuos"]:
                 secciones[seccion_actual]["residuos"].append(c2)
 
-    return secciones
+    return secciones
+
+def buscar_datos_certificado_en_historial(servicio_sheets, correlativo):
+    """
+    Busca certificados en la pestaña 'Historial' por número correlativo.
+    Soporta formatos numéricos ('45' encuentra '045') o coincidencia de texto.
+    Retorna una lista de diccionarios con la información completa de cada coincidencia.
+    """
+    if not servicio_sheets or not correlativo:
+        return []
+    try:
+        r = servicio_sheets.spreadsheets().values().get(
+            spreadsheetId=ID_SHEET_CONTROL,
+            range="'historial'!A:J"
+        ).execute()
+        filas = r.get('values', [])
+        if len(filas) < 2:
+            return []
+
+        corr_query = str(correlativo).strip().upper()
+        corr_num = None
+        if corr_query.isdigit():
+            corr_num = int(corr_query)
+
+        resultados = []
+        for idx, row in enumerate(filas[1:]):
+            num_fila = idx + 2
+            corr_row = str(row[3]).strip().upper() if len(row) > 3 else ""
+            
+            match = False
+            if corr_row and corr_row == corr_query:
+                match = True
+            elif corr_num is not None and corr_row.isdigit() and int(corr_row) == corr_num:
+                match = True
+            elif corr_query and corr_query in corr_row:
+                match = True
+
+            if match:
+                resultados.append({
+                    "fila": num_fila,
+                    "fecha": str(row[0]).strip() if len(row) > 0 else "",
+                    "empresa": str(row[1]).strip() if len(row) > 1 else "",
+                    "fundo": str(row[2]).strip() if len(row) > 2 else "",
+                    "correlativo": corr_row,
+                    "tipo_cert": str(row[4]).strip() if len(row) > 4 else "",
+                    "guias": str(row[5]).strip() if len(row) > 5 else "",
+                    "link_guia": str(row[6]).strip() if len(row) > 6 else "",
+                    "link_doc": str(row[7]).strip() if len(row) > 7 else "",
+                    "link_pdf": str(row[8]).strip() if len(row) > 8 else "",
+                    "observacion": str(row[9]).strip() if len(row) > 9 else ""
+                })
+
+        return resultados
+    except Exception as e:
+        print(f"Error buscando datos de certificado en Historial: {e}")
+        return []
+
+def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_bytes, nombre_archivo="Expediente_Actualizado.pdf", tipo_flujo="Comercialización", carpeta_id=None):
+    """
+    Intenta actualizar in-place el archivo existente en Google Drive para preservar su ID y URL pública.
+    Si no existe o falla, sube un nuevo archivo en la carpeta designada.
+    """
+    import io
+    from googleapiclient.http import MediaIoBaseUpload
+
+    if servicio_drive and file_id_existente:
+        try:
+            media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), mimetype='application/pdf', resumable=True)
+            res = servicio_drive.files().update(
+                fileId=file_id_existente,
+                media_body=media,
+                fields='id, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+            link = res.get('webViewLink')
+            if link:
+                return link
+        except Exception as e:
+            print(f"Aviso: Falló actualización in-place en Drive ({e}). Se procederá a subir como nuevo archivo.")
+
+    # Fallback: Subir como nuevo archivo
+    return subir_pdf_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=carpeta_id)
+
+def registrar_edicion_en_historial(servicio_sheets, num_fila, link_pdf, usuario_editor="Usuario", obs_extra=""):
+    """
+    Actualiza la fila correspondiente en la pestaña 'Historial':
+    - Columna I ('Link pdf'): Enlace actualizado del PDF unificado.
+    - Columna J ('Obs'): Bitácora con fecha, hora y usuario editor.
+    """
+    from datetime import datetime, timedelta
+    if not servicio_sheets or not num_fila or num_fila < 2:
+        return False
+    try:
+        ahora_pe = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y %H:%M")
+        nota_audit = f"Actualizado el {ahora_pe} por {usuario_editor}"
+        if obs_extra:
+            nota_audit += f" | {obs_extra}"
+
+        body = {
+            "values": [[link_pdf, nota_audit]]
+        }
+        servicio_sheets.spreadsheets().values().update(
+            spreadsheetId=ID_SHEET_CONTROL,
+            range=f"'historial'!I{num_fila}:J{num_fila}",
+            valueInputOption="USER_ENTERED",
+            body=body
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error registrando edición en Historial: {e}")
+        return False
+
