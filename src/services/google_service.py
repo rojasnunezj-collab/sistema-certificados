@@ -1179,9 +1179,10 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
         print(f"Error buscando datos de certificado en Historial: {e}")
         return []
 
-def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_bytes, nombre_archivo="Expediente_Actualizado.pdf", tipo_flujo="Comercialización", carpeta_id=None):
+def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_bytes, nombre_archivo="Expediente.pdf", tipo_flujo="Comercialización", carpeta_id=None):
     """
     Intenta actualizar in-place el archivo existente en Google Drive para preservar su ID y URL pública.
+    Asegura que el nombre del archivo se conserve exactamente como se especificó.
     Si no existe o falla, sube un nuevo archivo en la carpeta designada.
     """
     import io
@@ -1190,10 +1191,12 @@ def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_
     if servicio_drive and file_id_existente:
         try:
             media = MediaIoBaseUpload(io.BytesIO(contenido_bytes), mimetype='application/pdf', resumable=True)
+            body = {'name': nombre_archivo} if nombre_archivo else {}
             res = servicio_drive.files().update(
                 fileId=file_id_existente,
+                body=body,
                 media_body=media,
-                fields='id, webViewLink',
+                fields='id, name, webViewLink',
                 supportsAllDrives=True
             ).execute()
             link = res.get('webViewLink')

@@ -1386,8 +1386,48 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
             st.divider()
             st.markdown("### 4. Regenerar y Publicar Expediente")
-            
-            obs_adicional = st.text_input("Observación o motivo del cambio (opcional):", placeholder="Ej: Corrección de placa de vehículo", key="input_motivo_edicion")
+
+            # Resolver nombre original exacto del archivo PDF
+            raw_pdf_val = str(cert_sel.get('raw_pdf', '')).strip()
+            nombre_pdf_orig = ""
+
+            if raw_pdf_val and raw_pdf_val.lower().endswith('.pdf') and not raw_pdf_val.startswith(('http://', 'https://')):
+                nombre_pdf_orig = raw_pdf_val
+            else:
+                # Intentar leer el nombre actual directamente de Google Drive
+                id_para_nombre = extraer_id_drive(cert_sel.get('link_pdf')) or extraer_id_drive(raw_pdf_val)
+                if drv and id_para_nombre:
+                    try:
+                        meta_drv = drv.files().get(fileId=id_para_nombre, fields='name', supportsAllDrives=True).execute()
+                        name_drv = meta_drv.get('name', '')
+                        if name_drv and name_drv.lower().endswith('.pdf'):
+                            nombre_pdf_orig = name_drv
+                    except Exception:
+                        pass
+
+            # Si no se pudo obtener de Drive o Historial, reconstruir con el formato original estándar
+            if not nombre_pdf_orig:
+                tipo_c = str(cert_sel.get('tipo_cert', 'Comercialización')).strip()
+                tipo_cod = "COM" if "comercializa" in tipo_c.lower() else "SER"
+                corr_c = str(cert_sel.get('correlativo', '')).strip()
+                dest_c = str(cert_sel.get('fundo', 'GENERAL')).strip()
+                if not dest_c or dest_c.upper() in ['NAN', 'NONE', '']:
+                    dest_c = "GENERAL"
+                nombre_pdf_orig = f"CERT-{tipo_cod}-{corr_c}-REM-TRAN-{dest_c}.pdf"
+
+            c_act_col1, c_act_col2 = st.columns([2, 1])
+            with c_act_col1:
+                nombre_pdf_usuario = st.text_input(
+                    "📌 Nombre del archivo PDF unificado:", 
+                    value=nombre_pdf_orig, 
+                    key="input_nombre_pdf_actualizado"
+                )
+            with c_act_col2:
+                obs_adicional = st.text_input(
+                    "Observación o motivo del cambio (opcional):", 
+                    placeholder="Ej: Corrección de placa de vehículo", 
+                    key="input_motivo_edicion"
+                )
 
             if st.button("🚀 Regenerar Expediente y Actualizar Historial", type="primary", use_container_width=True, key="btn_ejecutar_actualizacion_hist"):
                 doc_target = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
@@ -1431,16 +1471,18 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 num_paginas_reemplazar=1
                             )
 
-                            # 4. Actualizar en Google Drive (sobreescritura in-place para conservar el mismo link público)
+                            # 4. Actualizar en Google Drive (sobreescritura in-place para conservar el mismo link público y nombre original)
                             file_id_pdf = extraer_id_drive(cert_sel.get('link_pdf')) if str(cert_sel.get('link_pdf', '')).startswith(('http://', 'https://')) else extraer_id_drive(cert_sel.get('raw_pdf'))
-                            nombre_sug = f"CERT-{cert_sel['tipo_cert']}-{cert_sel['correlativo']}-ACTUALIZADO.pdf"
+                            nombre_final_pdf = nombre_pdf_usuario.strip() if nombre_pdf_usuario else nombre_pdf_orig
+                            if not nombre_final_pdf.lower().endswith('.pdf'):
+                                nombre_final_pdf += '.pdf'
                             
                             nuevo_link_drive = sobrescribir_o_subir_pdf_drive(
                                 drv, 
                                 file_id_pdf, 
                                 pdf_actualizado_bytes, 
-                                nombre_archivo=nombre_sug, 
-                                tipo_flujo=cert_sel['tipo_cert']
+                                nombre_archivo=nombre_final_pdf, 
+                                tipo_flujo=cert_sel.get('tipo_cert', 'Comercialización')
                             )
 
                             # 5. Registrar auditoría en la pestaña 'Historial'
@@ -1456,7 +1498,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
                             st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes
                             st.session_state['act_pdf_final_link'] = link_para_historial
-                            st.session_state['act_pdf_final_nombre'] = nombre_sug
+                            st.session_state['act_pdf_final_nombre'] = nombre_final_pdf
                             st.session_state['act_nuevo_cert_preview'] = nuevo_cert_pdf_bytes
                             
                             st.cache_data.clear()
@@ -1468,9 +1510,9 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             if st.session_state.get('act_pdf_final_link'):
                 st.markdown(f"📄 **Expediente PDF Actualizado:** [Ver en Google Drive]({st.session_state['act_pdf_final_link']})")
                 st.download_button(
-                    label=f"📩 Descargar {st.session_state.get('act_pdf_final_nombre', 'Expediente_Actualizado.pdf')}",
+                    label=f"📩 Descargar {st.session_state.get('act_pdf_final_nombre', 'Expediente.pdf')}",
                     data=st.session_state.get('act_pdf_final_bytes', b''),
-                    file_name=st.session_state.get('act_pdf_final_nombre', 'Expediente_Actualizado.pdf'),
+                    file_name=st.session_state.get('act_pdf_final_nombre', 'Expediente.pdf'),
                     mime="application/pdf",
                     key="btn_descarga_act_hist"
                 )
@@ -1495,7 +1537,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             nuevo_cert_file = st.file_uploader("2. Sube el nuevo Certificado (.docx o .pdf):", type=["docx", "pdf"], key="up_nuevo_cert_manual")
 
         if pdf_expediente_file and nuevo_cert_file:
-            nombre_descarga = f"EXPEDIENTE-ACTUALIZADO-{pdf_expediente_file.name}"
+            nombre_descarga = pdf_expediente_file.name
             if st.button("⚡ Sustituir Certificado y Generar PDF", type="primary", key="btn_swap_manual"):
                 with st.spinner("Ensamblando nuevo expediente..."):
                     try:
@@ -1513,9 +1555,9 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
             if st.session_state.get('manual_swap_bytes'):
                 st.download_button(
-                    label=f"📩 Descargar {st.session_state.get('manual_swap_name', 'Expediente_Actualizado.pdf')}",
+                    label=f"📩 Descargar {st.session_state.get('manual_swap_name', 'Expediente.pdf')}",
                     data=st.session_state.get('manual_swap_bytes', b''),
-                    file_name=st.session_state.get('manual_swap_name', 'Expediente_Actualizado.pdf'),
+                    file_name=st.session_state.get('manual_swap_name', 'Expediente.pdf'),
                     mime="application/pdf",
                     key="btn_descarga_swap_manual"
                 )
