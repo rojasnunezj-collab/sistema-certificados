@@ -1102,10 +1102,12 @@ def obtener_catalogo_servicios_por_categoria(df_servicios):
 
     return secciones
 
-def buscar_datos_certificado_en_historial(servicio_sheets, correlativo):
+def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio_drive=None):
     """
     Busca certificados en la pestaña 'Historial' por número correlativo.
     Soporta formatos numéricos ('45' encuentra '045') o coincidencia de texto.
+    Si se proporciona servicio_drive, resuelve automáticamente los enlaces web (webViewLink)
+    de Drive en caso de que en la celda solo figure el nombre del archivo.
     Retorna una lista de diccionarios con la información completa de cada coincidencia.
     """
     if not servicio_sheets or not correlativo:
@@ -1138,6 +1140,24 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo):
                 match = True
 
             if match:
+                raw_guia = str(row[6]).strip() if len(row) > 6 else ""
+                raw_doc = str(row[7]).strip() if len(row) > 7 else ""
+                raw_pdf = str(row[8]).strip() if len(row) > 8 else ""
+
+                url_doc = raw_doc
+                if raw_doc and not raw_doc.startswith(('http://', 'https://')):
+                    if servicio_drive:
+                        link_d = obtener_link_archivo_drive(servicio_drive, raw_doc)
+                        if link_d:
+                            url_doc = link_d
+
+                url_pdf = raw_pdf
+                if raw_pdf and not raw_pdf.startswith(('http://', 'https://')):
+                    if servicio_drive:
+                        link_p = obtener_link_archivo_drive(servicio_drive, raw_pdf)
+                        if link_p:
+                            url_pdf = link_p
+
                 resultados.append({
                     "fila": num_fila,
                     "fecha": str(row[0]).strip() if len(row) > 0 else "",
@@ -1146,9 +1166,11 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo):
                     "correlativo": corr_row,
                     "tipo_cert": str(row[4]).strip() if len(row) > 4 else "",
                     "guias": str(row[5]).strip() if len(row) > 5 else "",
-                    "link_guia": str(row[6]).strip() if len(row) > 6 else "",
-                    "link_doc": str(row[7]).strip() if len(row) > 7 else "",
-                    "link_pdf": str(row[8]).strip() if len(row) > 8 else "",
+                    "link_guia": raw_guia,
+                    "link_doc": url_doc,
+                    "raw_doc": raw_doc,
+                    "link_pdf": url_pdf,
+                    "raw_pdf": raw_pdf,
                     "observacion": str(row[9]).strip() if len(row) > 9 else ""
                 })
 

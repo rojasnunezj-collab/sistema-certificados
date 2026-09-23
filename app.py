@@ -1315,8 +1315,8 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             btn_buscar_corr = st.button("🔍 Buscar en Historial", type="primary", use_container_width=True, key="btn_buscar_historial")
 
         if btn_buscar_corr and corr_busqueda:
-            with st.spinner("Buscando en la hoja Historial..."):
-                hallados = buscar_datos_certificado_en_historial(sht, corr_busqueda)
+            with st.spinner("Buscando en Historial y resolviendo enlaces de Drive..."):
+                hallados = buscar_datos_certificado_en_historial(sht, corr_busqueda, servicio_drive=drv)
                 st.session_state['act_certificados_encontrados'] = hallados
                 if not hallados:
                     st.warning(f"⚠️ No se encontró ningún certificado con el correlativo '{corr_busqueda}' en Historial.")
@@ -1344,17 +1344,28 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                 st.markdown(f"📌 **Correlativo:** `{cert_sel['correlativo']}`")
                 st.markdown(f"🚛 **Guías Asociadas:** `{cert_sel['guias']}`")
             with col_info3:
-                link_doc_actual = cert_sel['link_doc']
-                link_pdf_actual = cert_sel['link_pdf']
-                obs_actual = cert_sel['observacion']
-                if link_doc_actual:
-                    st.markdown(f"📄 **Word Original:** [Editar en Google Docs]({link_doc_actual})")
+                link_doc_actual = cert_sel.get('link_doc', '')
+                link_pdf_actual = cert_sel.get('link_pdf', '')
+                raw_doc = cert_sel.get('raw_doc', '')
+                raw_pdf = cert_sel.get('raw_pdf', '')
+                obs_actual = cert_sel.get('observacion', '')
+
+                # 1. Enlace a Word
+                if link_doc_actual and str(link_doc_actual).startswith(('http://', 'https://')):
+                    st.link_button("📄 Editar Word en Docs ↗", link_doc_actual, use_container_width=True)
+                elif raw_doc:
+                    st.markdown(f"📄 **Word:** `{raw_doc}`")
                 else:
-                    st.caption("📄 Word: Sin enlace en Historial")
-                if link_pdf_actual:
-                    st.markdown(f"📑 **PDF Unificado Actual:** [Ver en Drive]({link_pdf_actual})")
+                    st.caption("📄 Word: Sin registro en Historial")
+
+                # 2. Enlace a PDF
+                if link_pdf_actual and str(link_pdf_actual).startswith(('http://', 'https://')):
+                    st.link_button("📑 Ver PDF Unificado en Drive ↗", link_pdf_actual, use_container_width=True)
+                elif raw_pdf:
+                    st.markdown(f"📑 **PDF:** `{raw_pdf}`")
                 else:
-                    st.caption("📑 PDF: Sin enlace en Historial")
+                    st.caption("📑 PDF: Sin registro en Historial")
+
                 if obs_actual:
                     st.caption(f"📝 *Obs previa:* {obs_actual}")
 
@@ -1362,7 +1373,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             st.markdown("### 3. Edición del Certificado")
             st.info("""
             📝 **Instrucciones para editar:**
-            - **Opción A (Recomendada):** Haz clic en el enlace superior **[Editar en Google Docs]** para abrir el archivo Word en Google Docs, corrige los datos necesarios (pesos, placas, nombres, etc.) y espera a que indique **'Guardado en Drive'**.
+            - **Opción A (Recomendada):** Haz clic en el botón superior **[📄 Editar Word en Docs ↗]** para abrir el archivo Word en Google Docs, corrige los datos necesarios (pesos, placas, nombres, etc.) y espera a que indique **'Guardado en Drive'**.
             - **Opción B (Local):** Si prefieres editarlo en tu computadora o ya tienes un archivo Word/PDF corregido, súbelo en el recuadro a continuación:
             """)
             
@@ -1378,8 +1389,10 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             obs_adicional = st.text_input("Observación o motivo del cambio (opcional):", placeholder="Ej: Corrección de placa de vehículo", key="input_motivo_edicion")
 
             if st.button("🚀 Regenerar Expediente y Actualizar Historial", type="primary", use_container_width=True, key="btn_ejecutar_actualizacion_hist"):
-                if not cert_sel['link_pdf']:
-                    st.error("❌ El registro seleccionado no tiene un enlace de PDF unificado ('Link pdf') en Historial para reemplazar la carátula.")
+                doc_target = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
+                pdf_target = cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
+                if not pdf_target:
+                    st.error("❌ El registro seleccionado no tiene un enlace ni archivo de PDF unificado en Historial para reemplazar la carátula.")
                 else:
                     with st.spinner("⏳ Descargando documentos y ejecutando sustitución quirúrgica..."):
                         try:
@@ -1392,11 +1405,11 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                     nuevo_cert_pdf_bytes = convertir_docx_a_pdf(subida_local_doc.getvalue())
                                 st.toast("✅ Certificado cargado desde archivo local.")
                             else:
-                                if not cert_sel['link_doc']:
-                                    raise Exception("No se encontró el enlace del Word en Drive ni se subió un archivo local.")
-                                doc_drive_io = descargar_archivo_drive_por_id_o_nombre(drv, cert_sel['link_doc'])
+                                if not doc_target:
+                                    raise Exception("No se encontró el archivo Word en Drive ni se subió un archivo local.")
+                                doc_drive_io = descargar_archivo_drive_por_id_o_nombre(drv, doc_target)
                                 if not doc_drive_io:
-                                    raise Exception("No se pudo descargar el documento Word editado desde Google Drive.")
+                                    raise Exception(f"No se pudo descargar el documento Word '{doc_target}' desde Google Drive.")
                                 nuevo_cert_pdf_bytes = convertir_docx_a_pdf(doc_drive_io.getvalue())
                                 st.toast("✅ Versión actualizada del Word descargada de Google Drive.")
 
@@ -1404,9 +1417,9 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 raise Exception("Falló la conversión del nuevo certificado a PDF.")
 
                             # 2. Descargar el PDF unificado actual de Drive
-                            pdf_unido_io = descargar_archivo_drive_por_id_o_nombre(drv, cert_sel['link_pdf'])
+                            pdf_unido_io = descargar_archivo_drive_por_id_o_nombre(drv, pdf_target)
                             if not pdf_unido_io:
-                                raise Exception("No se pudo descargar el PDF consolidado existente desde Google Drive.")
+                                raise Exception(f"No se pudo descargar el PDF consolidado '{pdf_target}' desde Google Drive.")
 
                             pdf_unido_existente_bytes = pdf_unido_io.getvalue()
 
@@ -1418,7 +1431,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                             )
 
                             # 4. Actualizar en Google Drive (sobreescritura in-place para conservar el mismo link público)
-                            file_id_pdf = extraer_id_drive(cert_sel['link_pdf'])
+                            file_id_pdf = extraer_id_drive(cert_sel.get('link_pdf')) if str(cert_sel.get('link_pdf', '')).startswith(('http://', 'https://')) else extraer_id_drive(cert_sel.get('raw_pdf'))
                             nombre_sug = f"CERT-{cert_sel['tipo_cert']}-{cert_sel['correlativo']}-ACTUALIZADO.pdf"
                             
                             nuevo_link_drive = sobrescribir_o_subir_pdf_drive(
@@ -1431,7 +1444,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
                             # 5. Registrar auditoría en la pestaña 'Historial'
                             usuario_editor = st.session_state.get('usuario_email', 'Usuario')
-                            link_para_historial = nuevo_link_drive or cert_sel['link_pdf']
+                            link_para_historial = nuevo_link_drive or cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
                             registrar_edicion_en_historial(
                                 sht, 
                                 cert_sel['fila'], 
