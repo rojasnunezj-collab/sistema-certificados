@@ -1376,6 +1376,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             - **Opción A (Recomendada):** Haz clic en el botón superior **[📄 Editar Word en Docs ↗]** para abrir el archivo Word en Google Docs, corrige los datos necesarios (pesos, placas, nombres, etc.) y espera a que indique **'Guardado en Drive'**.
             - **Opción B (Local):** Si prefieres editarlo en tu computadora o ya tienes un archivo Word/PDF corregido, súbelo en el recuadro a continuación:
             """)
+            st.warning("⚠️ **Importante al editar en Google Docs:** Verifica en la pestaña de Google Docs que aparezca el icono de la nube con el check ✓ **'Guardado en Drive'** antes de presionar el botón de regenerar.")
             
             subida_local_doc = st.file_uploader(
                 "📂 (Opcional) Cargar Word (.docx) o PDF corregido desde tu PC:",
@@ -1456,6 +1457,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                             st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes
                             st.session_state['act_pdf_final_link'] = link_para_historial
                             st.session_state['act_pdf_final_nombre'] = nombre_sug
+                            st.session_state['act_nuevo_cert_preview'] = nuevo_cert_pdf_bytes
                             
                             st.cache_data.clear()
                             st.success("✅ ¡Expediente actualizado exitosamente en Google Drive y registrado en la pestaña Historial!")
@@ -1472,6 +1474,15 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     mime="application/pdf",
                     key="btn_descarga_act_hist"
                 )
+                st.info("💡 **Nota sobre el visor web de Google Drive:** Si haces clic en 'Ver en Google Drive' y aún observas la versión anterior, se debe a la caché del visor de Google Drive. Puedes presionar **Ctrl + Shift + R** en el visor de Drive o descargar el archivo con el botón superior para comprobar los cambios de inmediato.")
+                if st.session_state.get('act_nuevo_cert_preview'):
+                    with st.expander("🔍 Ver texto detectado en el nuevo certificado (Página 1)", expanded=True):
+                        try:
+                            from pypdf import PdfReader
+                            r_pv = PdfReader(io.BytesIO(st.session_state['act_nuevo_cert_preview']))
+                            st.text(r_pv.pages[0].extract_text()[:900])
+                        except Exception as e_pv:
+                            st.caption(f"No se pudo renderizar texto previo: {e_pv}")
 
     with tab_manual:
         st.markdown("### ⚡ Herramienta Rápida de Sustitución (Archivos Locales)")
