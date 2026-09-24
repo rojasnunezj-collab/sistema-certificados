@@ -811,7 +811,7 @@ def buscar_guias_asociadas_para_unir(sheets_service, drive_service, guias_lista)
         return []
 
 def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
-    """Descarga un archivo específico de Drive (exporta a Word/PDF si es Google Doc)."""
+    """Descarga un archivo específico de Drive (exporta a Word si es Google Doc, o usa headRevisionId para binarios y evitar cualquier caché)."""
     import io
     from googleapiclient.http import MediaIoBaseDownload
     if not servicio_drive or not file_id_o_nombre:
@@ -820,12 +820,23 @@ def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
         archivo_id = extraer_id_drive(file_id_o_nombre)
         
         try:
-            meta = servicio_drive.files().get(fileId=archivo_id, fields='name, mimeType', supportsAllDrives=True).execute()
+            meta = servicio_drive.files().get(
+                fileId=archivo_id, 
+                fields='id, name, mimeType, headRevisionId, modifiedTime', 
+                supportsAllDrives=True
+            ).execute()
             mime_type = meta.get('mimeType', '')
             archivo_name = meta.get('name', 'archivo_descargado')
+            head_rev = meta.get('headRevisionId')
             
             if mime_type == 'application/vnd.google-apps.document':
                 req = servicio_drive.files().export_media(fileId=archivo_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            elif head_rev:
+                # Descarga directa por revisionId para garantizar la última versión sin caché intermedio
+                try:
+                    req = servicio_drive.revisions().get_media(fileId=archivo_id, revisionId=head_rev)
+                except Exception:
+                    req = servicio_drive.files().get_media(fileId=archivo_id)
             else:
                 req = servicio_drive.files().get_media(fileId=archivo_id)
                 
@@ -845,6 +856,71 @@ def descargar_archivo_drive_por_id_o_nombre(servicio_drive, file_id_o_nombre):
     except Exception as e:
         print(f"Error descargando {file_id_o_nombre}: {e}")
     return None
+
+def obtener_info_revision_documento_drive(servicio_drive, file_id_o_nombre):
+    """
+    Inspecciona en tiempo real el archivo en Google Drive y devuelve:
+    - nombre: nombre del archivo
+    - modified_pe: fecha y hora formateada en hora Perú (UTC-5)
+    - tiempo_rel: texto amigable ('hace 15 segundos', 'hace 2 minutos', etc.)
+    - diff_seg: diferencia en segundos desde la última modificación
+    - filas_resumen: lista de filas de tabla extraídas del .docx para previsualización inmediata
+    - es_reciente: True si fue modificado en los últimos 15 minutos
+    """
+    from datetime import datetime, timezone, timedelta
+    from docx import Document
+    if not servicio_drive or not file_id_o_nombre:
+        return None
+    try:
+        archivo_id = extraer_id_drive(file_id_o_nombre)
+        meta = servicio_drive.files().get(
+            fileId=archivo_id, 
+            fields='id, name, mimeType, modifiedTime, headRevisionId', 
+            supportsAllDrives=True
+        ).execute()
+        
+        mod_str = meta.get('modifiedTime')
+        if not mod_str:
+            return None
+            
+        dt_utc = datetime.fromisoformat(mod_str.replace('Z', '+00:00'))
+        dt_pe = dt_utc.astimezone(timezone(timedelta(hours=-5)))
+        ahora_pe = datetime.now(timezone(timedelta(hours=-5)))
+        diff_seg = int((ahora_pe - dt_pe).total_seconds())
+
+        if diff_seg < 60:
+            tiempo_rel = f"hace {max(1, diff_seg)} segundo(s)"
+        elif diff_seg < 3600:
+            tiempo_rel = f"hace {diff_seg // 60} minuto(s)"
+        else:
+            tiempo_rel = f"hace {diff_seg // 3600} hora(s)"
+
+        # Descargar y extraer vista rápida de texto/tablas
+        fh = descargar_archivo_drive_por_id_o_nombre(servicio_drive, archivo_id)
+        filas_resumen = []
+        if fh:
+            try:
+                doc = Document(fh)
+                for t in doc.tables:
+                    for row in t.rows[:6]:
+                        vals = [c.text.strip() for c in row.cells if c.text.strip()]
+                        if vals:
+                            filas_resumen.append(" | ".join(vals))
+            except Exception:
+                pass
+
+        return {
+            "id": archivo_id,
+            "name": meta.get('name', ''),
+            "modified_pe": dt_pe.strftime("%d/%m/%Y %H:%M:%S"),
+            "tiempo_rel": tiempo_rel,
+            "diff_seg": diff_seg,
+            "es_reciente": diff_seg < 900,
+            "filas_resumen": filas_resumen
+        }
+    except Exception as e:
+        print(f"Error obteniendo info de revisión en Drive: {e}")
+        return None
 
 def convertir_imagen_a_pdf(imagen_bytes, nombre_archivo=""):
     """Convierte bytes de imagen (JPG, PNG, JPEG, WEBP) a páginas PDF en memoria."""

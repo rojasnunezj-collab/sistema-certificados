@@ -22,7 +22,8 @@ from src.services.google_service import (
     subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
     obtener_catalogo_servicios_por_categoria,
     convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
-    sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial
+    sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
+    obtener_info_revision_documento_drive
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -1370,14 +1371,60 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     st.caption(f"📝 *Obs previa:* {obs_actual}")
 
             st.divider()
-            st.markdown("### 3. Edición del Certificado")
+            st.markdown("### 3. Edición del Certificado y Verificación en la Nube")
             st.info("""
-            📝 **Instrucciones para editar:**
-            - **Opción A (Recomendada):** Haz clic en el botón superior **[📄 Editar Word en Docs ↗]** para abrir el archivo Word en Google Docs, corrige los datos necesarios (pesos, placas, nombres, etc.) y espera a que indique **'Guardado en Drive'**.
-            - **Opción B (Local):** Si prefieres editarlo en tu computadora o ya tienes un archivo Word/PDF corregido, súbelo en el recuadro a continuación:
+            📝 **Flujo recomendado para editar:**
+            1. Haz clic en el botón superior **[📄 Editar Word en Docs ↗]** para abrir y modificar los datos (pesos, placas, correlativo, etc.) en Google Docs.
+            2. En Google Docs, confirma que aparezca el icono de la nube con el check ✓ **'Guardado en Drive'**.
+            3. Haz clic en el botón **'🔄 Recargar de la Nube y Verificar Cambios'** a continuación para limpiar la memoria/caché y comprobar que Google Drive ya tiene tu nueva versión antes de regenerar.
             """)
-            st.warning("⚠️ **Importante al editar en Google Docs:** Verifica en la pestaña de Google Docs que aparezca el icono de la nube con el check ✓ **'Guardado en Drive'** antes de presionar el botón de regenerar.")
-            
+
+            doc_target_actual = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
+            c_v1, c_v2 = st.columns([2, 1])
+            with c_v1:
+                btn_refrescar_cloud = st.button("🔄 Recargar de la Nube y Verificar Cambios (Limpiar Caché)", type="secondary", use_container_width=True, key="btn_check_doc_cloud")
+            with c_v2:
+                btn_limpiar_sesion = st.button("🧹 Limpiar Sesión y Reiniciar", use_container_width=True, key="btn_reset_modulo_actualizar")
+
+            if btn_limpiar_sesion:
+                for k in ['act_certificados_encontrados', 'act_pdf_final_bytes', 'act_pdf_final_link', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_doc_cloud_info']:
+                    st.session_state.pop(k, None)
+                st.cache_data.clear()
+                st.rerun()
+
+            if btn_refrescar_cloud:
+                with st.spinner("Limpiando memoria caché y consultando el archivo Word directamente en Google Drive..."):
+                    st.cache_data.clear()
+                    st.session_state.pop('act_pdf_final_bytes', None)
+                    st.session_state.pop('act_pdf_final_link', None)
+                    st.session_state.pop('act_nuevo_cert_preview', None)
+                    info_doc = obtener_info_revision_documento_drive(drv, doc_target_actual)
+                    st.session_state['act_doc_cloud_info'] = info_doc
+                    if info_doc:
+                        st.toast("✅ Documento consultado con éxito en Google Drive.")
+                    else:
+                        st.warning("No se pudo obtener información del documento en Drive.")
+
+            info_doc = st.session_state.get('act_doc_cloud_info')
+            if info_doc:
+                with st.container(border=True):
+                    st.markdown(f"☁️ **Estado del Documento en Google Drive:** `{info_doc['name']}`")
+                    col_st1, col_st2 = st.columns(2)
+                    with col_st1:
+                        st.markdown(f"🕒 **Última Modificación:** `{info_doc['modified_pe']}`")
+                    with col_st2:
+                        st.markdown(f"⏱️ **Tiempo transcurrido:** `{info_doc['tiempo_rel']}`")
+                    
+                    if info_doc.get('es_reciente'):
+                        st.success(f"✅ **¡Documento sincronizado en Google Drive!** (Modificado {info_doc['tiempo_rel']}). Ya puedes regenerar el expediente con total seguridad.")
+                    else:
+                        st.warning(f"⚠️ **Aviso de Sincronización:** En Google Drive, este archivo figura modificado el **{info_doc['modified_pe']} ({info_doc['tiempo_rel']})**.\n\nSi acabas de editar en Google Docs y no ves tus cambios reflejados, Google Docs puede tardar unos segundos en volcar el archivo a Drive. Asegúrate de presionar Enter o cerrar la pestaña de Google Docs, espera unos instantes y vuelve a presionar **[🔄 Recargar de la Nube y Verificar Cambios]**.")
+
+                    if info_doc.get('filas_resumen'):
+                        with st.expander("📋 Ver datos detectados en la tabla del Word (Primeras filas)", expanded=True):
+                            for f_txt in info_doc['filas_resumen']:
+                                st.code(f_txt, language=None)
+
             subida_local_doc = st.file_uploader(
                 "📂 (Opcional) Cargar Word (.docx) o PDF corregido desde tu PC:",
                 type=["docx", "pdf"],
@@ -1435,8 +1482,11 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                 if not pdf_target:
                     st.error("❌ El registro seleccionado no tiene un enlace ni archivo de PDF unificado en Historial para reemplazar la carátula.")
                 else:
-                    with st.spinner("⏳ Descargando documentos y ejecutando sustitución quirúrgica..."):
+                    with st.spinner("⏳ Limpiando memoria y procesando sustitución quirúrgica..."):
                         try:
+                            # 0. Limpiar caché inmediatamente
+                            st.cache_data.clear()
+
                             # 1. Obtener los bytes del nuevo certificado en PDF
                             if subida_local_doc:
                                 nombre_subido = subida_local_doc.name.lower()
