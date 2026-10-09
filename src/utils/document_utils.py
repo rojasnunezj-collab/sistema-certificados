@@ -62,6 +62,135 @@ def set_table_margins(table, top=0, bottom=0, left=10, right=10):
     tblPr.append(tblCellMar)
 
 # ====================================================================
+# --- BLOQUE 2.5: Ajuste Automático y Dinámico de Firmas ---
+# ====================================================================
+def ajustar_posicion_y_tamano_firmas(doc, num_items):
+    """
+    Ajusta dinámicamente las firmas en la plantilla Word (.docx) para que se acomoden
+    de forma limpia entre el último párrafo y el pie de página, evitando que se bajen
+    y se sobrepongan al pie de página. Si el espacio físico no fuera suficiente
+    (por una tabla inusualmente extensa), se mantiene una escala legible mínima
+    para permitir edición manual.
+    """
+    try:
+        # 1. Localizar el párrafo de firmas (buscando desde el final hacia arriba)
+        sig_p = None
+        sig_idx = -1
+        total_p = len(doc.paragraphs)
+        for i in range(total_p - 1, -1, -1):
+            if i < total_p // 2:
+                break
+            p = doc.paragraphs[i]
+            drawings = p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+            sig_drawings = []
+            for d in drawings:
+                ext = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}extent')
+                if ext is not None:
+                    try:
+                        cy = int(ext.get('cy', 0))
+                        # Las firmas tienen alto > 20 pt (254,000 EMUs) y no son marcas de agua de página completa (cy < 4,000,000)
+                        if 254000 < cy < 4000000:
+                            sig_drawings.append(d)
+                    except (ValueError, TypeError):
+                        pass
+            if len(sig_drawings) >= 1 and ('[[TABLA_NOTAS]]' not in p.text):
+                sig_p = p
+                sig_idx = i
+                break
+
+        if sig_p is None or sig_idx == -1:
+            return
+
+        # 2. Eliminar párrafos vacíos posteriores al párrafo de firmas
+        paras_posteriores_a_eliminar = []
+        for i in range(sig_idx + 1, len(doc.paragraphs)):
+            p = doc.paragraphs[i]
+            drawings = p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+            if not p.text.strip() and not drawings:
+                paras_posteriores_a_eliminar.append(p)
+        for p in paras_posteriores_a_eliminar:
+            try:
+                p._element.getparent().remove(p._element)
+            except Exception:
+                pass
+
+        # 3. Eliminar párrafos vacíos inmediatamente anteriores al párrafo de firmas
+        paras_anteriores_a_eliminar = []
+        for i in range(sig_idx - 1, -1, -1):
+            p = doc.paragraphs[i]
+            drawings = p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+            if not p.text.strip() and not drawings:
+                paras_anteriores_a_eliminar.append(p)
+            else:
+                break
+        for p in paras_anteriores_a_eliminar:
+            try:
+                p._element.getparent().remove(p._element)
+            except Exception:
+                pass
+
+        # 4. Compactar espaciado del párrafo de firmas
+        sig_p.paragraph_format.space_before = Pt(0)
+        sig_p.paragraph_format.space_after = Pt(0)
+        sig_p.paragraph_format.line_spacing = 1.0
+
+        # Si hay varios ítems (>= 4), compactar párrafos vacíos intermedios anteriores
+        if num_items >= 4:
+            for p in doc.paragraphs:
+                if not p.text.strip() and not p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing'):
+                    p.paragraph_format.space_before = Pt(0)
+                    p.paragraph_format.space_after = Pt(0)
+                    p.paragraph_format.line_spacing = Pt(3)
+
+        # 5. Escala y desplazamiento vertical adaptativo según el número de filas
+        if num_items <= 1:
+            scale = 1.0
+            offset_v = 100000  # ~7.8 pt
+        elif num_items == 2:
+            scale = 0.90
+            offset_v = 70000   # ~5.5 pt
+        elif num_items <= 4:
+            scale = 0.82
+            offset_v = 50000   # ~3.9 pt
+        elif num_items <= 6:
+            scale = 0.74
+            offset_v = 30000   # ~2.3 pt
+        else:
+            # 7 o más ítems: escala mínima 0.68 para no comprometer legibilidad
+            scale = 0.68
+            offset_v = 15000   # ~1.2 pt
+
+        # 6. Aplicar ajustes en el XML de las firmas
+        drawings = sig_p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        for d in drawings:
+            # Eliminar márgenes de envoltura en anchor
+            for anchor in d.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}anchor'):
+                anchor.set('distT', '0')
+                anchor.set('distB', '0')
+
+            # Ajustar posición vertical respecto al párrafo
+            posV = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionV')
+            if posV is not None:
+                posOffset = posV.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
+                if posOffset is not None:
+                    posOffset.text = str(offset_v)
+
+            # Escalar dimensiones manteniendo la relación de aspecto
+            if scale < 1.0:
+                for el in d.iter():
+                    if 'cx' in el.attrib and 'cy' in el.attrib:
+                        try:
+                            cx = int(el.attrib['cx'])
+                            cy = int(el.attrib['cy'])
+                            el.attrib['cx'] = str(int(cx * scale))
+                            el.attrib['cy'] = str(int(cy * scale))
+                        except (ValueError, TypeError):
+                            pass
+
+    except Exception as e:
+        print(f"Aviso en ajuste de firmas: {e}")
+
+# ====================================================================
 # --- BLOQUE 3: Lógica Principal de Inyección Documental ---
 # ====================================================================
 def inyectar_tabla_en_docx(doc_io, data_items):
@@ -140,6 +269,9 @@ def inyectar_tabla_en_docx(doc_io, data_items):
 
         tbl, p = table._tbl, target_paragraph._p
         p.addnext(tbl)
+
+    # Ajuste adaptativo de firmas para evitar superposición con el pie de página
+    ajustar_posicion_y_tamano_firmas(doc, len(data_items))
 
     new_buffer = io.BytesIO()
     doc.save(new_buffer)
