@@ -62,15 +62,38 @@ def set_table_margins(table, top=0, bottom=0, left=10, right=10):
     tblPr.append(tblCellMar)
 
 # ====================================================================
-# --- BLOQUE 2.5: Ajuste Automático y Dinámico de Firmas ---
 # ====================================================================
+# --- BLOQUE 2.5: Medidas Predeterminadas de Referencia (CERT-COM-217) ---
+# ====================================================================
+# Medidas calibradas tomadas de CERT-COM-217-CHALLAPAMPA:
+# - Párrafo de firmas contiguo al último párrafo de texto (sin párrafos vacíos intermedios).
+# - Espaciado de párrafo: space_before=0, space_after=0, line_spacing=1.0, alignment=CENTER.
+# - Firma 1 (Izquierda): cx=1507663 (118.71 pt), cy=1012138 (79.70 pt), posH=1495425, posV=476250 (~37.5 pt)
+# - Firma 2 (Derecha):   cx=1665286 (131.12 pt), cy=1030891 (81.17 pt), posH=3533775, posV=473040 (~37.25 pt)
+# - Márgenes de envoltura de ancla: distT=0, distB=0
+MEDIDAS_REFERENCIA_FIRMAS = {
+    'firma_izq': {
+        'cx': 1507663,
+        'cy': 1012138,
+        'pos_h': 1495425,
+        'pos_v': 476250,
+    },
+    'firma_der': {
+        'cx': 1665286,
+        'cy': 1030891,
+        'pos_h': 3533775,
+        'pos_v': 473040,
+    }
+}
+
 def ajustar_posicion_y_tamano_firmas(doc, num_items):
     """
-    Ajusta dinámicamente las firmas en la plantilla Word (.docx) para que se acomoden
-    de forma limpia entre el último párrafo y el pie de página, evitando que se bajen
-    y se sobrepongan al pie de página. Si el espacio físico no fuera suficiente
-    (por una tabla inusualmente extensa), se mantiene una escala legible mínima
-    para permitir edición manual.
+    Ajusta dinámicamente las firmas en la plantilla Word (.docx) tomando como
+    referencia predeterminada las medidas exactas de CERT-COM-217-CHALLAPAMPA.
+    Ubica las firmas de forma limpia a la distancia calibrada del último párrafo,
+    evitando que se sobrepongan al pie de página. Si una tabla contiene un volumen
+    inusual de filas (>= 5), compacta adaptativamente el espacio respetando un
+    límite legible para no distorsionar el documento, permitiendo edición manual si excede.
     """
     try:
         # 1. Localizar el párrafo de firmas (buscando desde el final hacia arriba)
@@ -88,7 +111,7 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
                 if ext is not None:
                     try:
                         cy = int(ext.get('cy', 0))
-                        # Las firmas tienen alto > 20 pt (254,000 EMUs) y no son marcas de agua de página completa (cy < 4,000,000)
+                        # Las firmas tienen alto > 20 pt (254,000 EMUs) y cy < 4,000,000 (no marcas de agua)
                         if 254000 < cy < 4000000:
                             sig_drawings.append(d)
                     except (ValueError, TypeError):
@@ -115,6 +138,7 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
                 pass
 
         # 3. Eliminar párrafos vacíos inmediatamente anteriores al párrafo de firmas
+        # (para que el párrafo de firmas quede contiguo al último párrafo de texto, igual que en CERT-COM-217)
         paras_anteriores_a_eliminar = []
         for i in range(sig_idx - 1, -1, -1):
             p = doc.paragraphs[i]
@@ -129,63 +153,86 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
             except Exception:
                 pass
 
-        # 4. Compactar espaciado del párrafo de firmas
+        # 4. Formato del párrafo de firmas idéntico a CERT-COM-217
         sig_p.paragraph_format.space_before = Pt(0)
         sig_p.paragraph_format.space_after = Pt(0)
         sig_p.paragraph_format.line_spacing = 1.0
+        sig_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        # Si hay varios ítems (>= 4), compactar párrafos vacíos intermedios anteriores
-        if num_items >= 4:
+        # 5. Escala y distancia predeterminada (referencia CERT-COM-217-CHALLAPAMPA)
+        # En caso estándar (hasta 3-4 ítems), usa exactamente el 100% de las medidas de CERT-COM-217.
+        if num_items <= 3:
+            scale = 1.0
+            scale_v = 1.0
+        elif num_items == 4:
+            scale = 0.96
+            scale_v = 0.88
+        elif num_items <= 6:
+            scale = 0.88
+            scale_v = 0.72
+            # Compactar párrafos vacíos anteriores si la tabla es grande
             for p in doc.paragraphs:
                 if not p.text.strip() and not p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing'):
                     p.paragraph_format.space_before = Pt(0)
                     p.paragraph_format.space_after = Pt(0)
                     p.paragraph_format.line_spacing = Pt(3)
-
-        # 5. Escala y desplazamiento vertical adaptativo según el número de filas
-        if num_items <= 1:
-            scale = 1.0
-            offset_v = 100000  # ~7.8 pt
-        elif num_items == 2:
-            scale = 0.90
-            offset_v = 70000   # ~5.5 pt
-        elif num_items <= 4:
-            scale = 0.82
-            offset_v = 50000   # ~3.9 pt
-        elif num_items <= 6:
-            scale = 0.74
-            offset_v = 30000   # ~2.3 pt
         else:
-            # 7 o más ítems: escala mínima 0.68 para no comprometer legibilidad
-            scale = 0.68
-            offset_v = 15000   # ~1.2 pt
+            # 7 o más ítems: límite legible
+            scale = 0.80
+            scale_v = 0.55
+            for p in doc.paragraphs:
+                if not p.text.strip() and not p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing'):
+                    p.paragraph_format.space_before = Pt(0)
+                    p.paragraph_format.space_after = Pt(0)
+                    p.paragraph_format.line_spacing = Pt(2)
 
-        # 6. Aplicar ajustes en el XML de las firmas
+        # 6. Obtener dibujos y ordenarlos de izquierda a derecha según su posH
         drawings = sig_p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
-        for d in drawings:
+        
+        def get_pos_h(d):
+            posH = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionH')
+            if posH is not None:
+                off = posH.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
+                if off is not None and off.text:
+                    try:
+                        return int(off.text)
+                    except ValueError:
+                        pass
+            return 0
+
+        drawings.sort(key=get_pos_h)
+
+        configs = [MEDIDAS_REFERENCIA_FIRMAS['firma_izq'], MEDIDAS_REFERENCIA_FIRMAS['firma_der']]
+
+        for idx, d in enumerate(drawings[:2]):
+            cfg = configs[idx]
+
             # Eliminar márgenes de envoltura en anchor
             for anchor in d.findall('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}anchor'):
                 anchor.set('distT', '0')
                 anchor.set('distB', '0')
 
-            # Ajustar posición vertical respecto al párrafo
+            # Posición horizontal predeterminada (posOffset en column)
+            posH = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionH')
+            if posH is not None:
+                off = posH.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
+                if off is not None:
+                    off.text = str(cfg['pos_h'])
+
+            # Distancia vertical predeterminada respecto al párrafo (posOffset en paragraph)
             posV = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionV')
             if posV is not None:
-                posOffset = posV.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
-                if posOffset is not None:
-                    posOffset.text = str(offset_v)
+                off = posV.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
+                if off is not None:
+                    off.text = str(int(cfg['pos_v'] * scale_v))
 
-            # Escalar dimensiones manteniendo la relación de aspecto
-            if scale < 1.0:
-                for el in d.iter():
-                    if 'cx' in el.attrib and 'cy' in el.attrib:
-                        try:
-                            cx = int(el.attrib['cx'])
-                            cy = int(el.attrib['cy'])
-                            el.attrib['cx'] = str(int(cx * scale))
-                            el.attrib['cy'] = str(int(cy * scale))
-                        except (ValueError, TypeError):
-                            pass
+            # Tamaño predeterminado (cx, cy)
+            new_cx = str(int(cfg['cx'] * scale))
+            new_cy = str(int(cfg['cy'] * scale))
+            for el in d.iter():
+                if 'cx' in el.attrib and 'cy' in el.attrib:
+                    el.attrib['cx'] = new_cx
+                    el.attrib['cy'] = new_cy
 
     except Exception as e:
         print(f"Aviso en ajuste de firmas: {e}")
