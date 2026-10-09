@@ -681,7 +681,7 @@ if modulo_actual == "📄 Generador de Certificados":
             )
         else:
             v_partida = st.text_input("Partida", formato_nompropio(grl.get('punto_partida', '')))
-        v_llegada = st.text_input("Llegada", formato_nompropio(grl.get('punto_llegada', '')))
+        v_llegada = ""  # Dirección de llegada predeterminada en la plantilla
         v_dest = st.text_input("Destinatario", grl.get('destinatario', ''))
 
         v_items_df = st.data_editor(
