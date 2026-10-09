@@ -31,7 +31,8 @@ from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certifica
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
     limpiar_descripcion, formatear_guia, obtener_fin_de_mes,
-    formato_nompropio
+    formato_nompropio, es_formato_guia, es_formato_placa,
+    verificar_consistencia_guia_placa, validar_inconsistencias_df
 )
 from docxtpl import DocxTemplate
 import urllib.parse
@@ -112,8 +113,11 @@ if 'repo' not in st.session_state:
         st.session_state.repo = {
             "emisores": leer_sheet_seguro("EMPRESAS"),
             "clientes": leer_sheet_seguro("CLIENTES"),
-            "servicios": leer_sheet_seguro("SERVICIOS")
+            "servicios": leer_sheet_seguro("SERVICIOS"),
+            "direcciones": leer_sheet_seguro("Direcciones")
         }
+elif "direcciones" not in st.session_state.repo:
+    st.session_state.repo["direcciones"] = leer_sheet_seguro("Direcciones")
 
 # Definimos la variable 'repo' global para el resto del código
 repo = st.session_state.repo
@@ -407,6 +411,10 @@ if modulo_actual == "📄 Generador de Certificados":
                     if d:
                         if not grl: grl = d 
                         s, f, p = d.get('serie','S/N'), d.get('fecha',''), d.get('vehiculo','')
+                        # Auto-corrección proactiva si la IA invirtió serie y vehículo
+                        if es_formato_placa(s) and es_formato_guia(p):
+                            s, p = p, s
+                            d['serie'], d['vehiculo'] = s, p
                         for it in d.get('items', []):
                             it.update({
                                 'guia_origen': s, 
@@ -572,11 +580,180 @@ if modulo_actual == "📄 Generador de Certificados":
         v_guia = c3.text_input("Guía", guia_limpia, disabled=not modo_manual)
         v_placa = c4.text_input("Placa", placa_limpia, disabled=not modo_manual)
 
-        v_partida = st.text_input("Partida", formato_nompropio(grl.get('punto_partida', '')))
+        # --- Diagnóstico Temprano de Guía vs Placa ---
+        estado_diag, msg_diag = verificar_consistencia_guia_placa(v_guia, v_placa)
+        if estado_diag != 'OK':
+            c_diag1, c_diag2 = st.columns([3, 1])
+            with c_diag1:
+                st.warning(f"⚠️ **Inconsistencia detectada:** {msg_diag}")
+            with c_diag2:
+                if st.button("🔄 Intercambiar Placa ⇄ Guía", key="btn_swap_cabecera", use_container_width=True):
+                    if 'df_items' in st.session_state and not st.session_state['df_items'].empty:
+                        df_sw = st.session_state['df_items'].copy()
+                        if 'guia_origen' in df_sw.columns and 'placa_origen' in df_sw.columns:
+                            tmp_g = df_sw['guia_origen'].copy()
+                            df_sw['guia_origen'] = df_sw['placa_origen']
+                            df_sw['placa_origen'] = tmp_g
+                            st.session_state['df_items'] = df_sw
+                    if 'ocr_data' in st.session_state and isinstance(st.session_state['ocr_data'], dict):
+                        ocr_sw = st.session_state['ocr_data'].copy()
+                        s_sw = ocr_sw.get('serie', '')
+                        ocr_sw['serie'] = ocr_sw.get('vehiculo', '')
+                        ocr_sw['vehiculo'] = s_sw
+                        st.session_state['ocr_data'] = ocr_sw
+                    st.toast("✅ Valores de Guía y Placa intercambiados correctamente.")
+                    st.rerun()
+
+        if modo_manual:
+            # --- AUTOCOMPLETADO DE DIRECCIÓN EXCLUSIVO PARA LLENADO MANUAL ---
+            from src.services.google_service import leer_sheet_seguro
+            df_clientes_bd = repo.get("clientes")
+            if df_clientes_bd is None or df_clientes_bd.empty:
+                df_clientes_bd = leer_sheet_seguro("CLIENTES")
+                repo["clientes"] = df_clientes_bd
+
+            df_dir_bd = repo.get("direcciones")
+            if df_dir_bd is None or df_dir_bd.empty:
+                df_dir_bd = leer_sheet_seguro("Direcciones")
+                repo["direcciones"] = df_dir_bd
+
+            # Lista alfabética unificada de empresas desde CLIENTES y Direcciones
+            lista_emp_cli = df_clientes_bd['EMPRESA'].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_clientes_bd.empty and 'EMPRESA' in df_clientes_bd.columns else []
+            lista_emp_dir = df_dir_bd['EMPRESA'].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_dir_bd.empty and 'EMPRESA' in df_dir_bd.columns else []
+            empresas_unicas = sorted(list(set(lista_emp_cli + lista_emp_dir)))
+
+            c_emp_man, c_fnd_man = st.columns(2)
+            with c_emp_man:
+                empresa_sel_man = st.selectbox(
+                    "🏢 Empresa (Pestaña Clientes):",
+                    options=["-- Seleccionar Empresa --"] + empresas_unicas,
+                    key="sel_manual_empresa"
+                )
+
+            opciones_fundos = []
+            mapa_fundo_dir = {}
+            if empresa_sel_man and empresa_sel_man != "-- Seleccionar Empresa --":
+                if not df_dir_bd.empty and 'EMPRESA' in df_dir_bd.columns:
+                    mask_emp = df_dir_bd['EMPRESA'].astype(str).str.strip().str.upper() == empresa_sel_man
+                    df_emp_dir = df_dir_bd[mask_emp]
+                    for _, r_dir in df_emp_dir.iterrows():
+                        fnd_nom = str(r_dir.get('FUNDO/PLANTA', '')).strip()
+                        dir_txt = str(r_dir.get('DIRECCION', '')).strip()
+                        if fnd_nom and fnd_nom.upper() not in ['NAN', 'NONE']:
+                            opciones_fundos.append(fnd_nom)
+                            mapa_fundo_dir[fnd_nom] = dir_txt
+                        elif dir_txt and dir_txt.upper() not in ['NAN', 'NONE']:
+                            opciones_fundos.append("DIRECCIÓN PRINCIPAL")
+                            mapa_fundo_dir["DIRECCIÓN PRINCIPAL"] = dir_txt
+
+                # Si no está en Direcciones, buscar en Clientes
+                if not mapa_fundo_dir and not df_clientes_bd.empty and 'EMPRESA' in df_clientes_bd.columns:
+                    df_emp_c = df_clientes_bd[df_clientes_bd['EMPRESA'].astype(str).str.strip().str.upper() == empresa_sel_man]
+                    if not df_emp_c.empty:
+                        d_cert = str(df_emp_c.iloc[0].get('DIRECCION CERTIFICADO', '')).strip()
+                        d_fisc = str(df_emp_c.iloc[0].get('DOMICILIO FISCAL', '')).strip()
+                        d_uno = str(df_emp_c.iloc[0].get('DIRECCION 1', '')).strip()
+                        dir_hallada = d_cert if d_cert and d_cert.upper() not in ['NAN', 'NONE'] else (d_fisc if d_fisc and d_fisc.upper() not in ['NAN', 'NONE'] else d_uno)
+                        if dir_hallada and dir_hallada.upper() not in ['NAN', 'NONE']:
+                            opciones_fundos.append("DIRECCIÓN REGISTRADA")
+                            mapa_fundo_dir["DIRECCIÓN REGISTRADA"] = dir_hallada
+
+            with c_fnd_man:
+                if opciones_fundos:
+                    fundo_sel_man = st.selectbox(
+                        "🌱 Fundo / Planta:",
+                        options=opciones_fundos,
+                        key="sel_manual_fundo"
+                    )
+                else:
+                    fundo_sel_man = None
+                    st.selectbox("🌱 Fundo / Planta:", options=["(Sin fundos registrados)"], disabled=True, key="sel_manual_fundo_disabled")
+
+            dir_autocompletada = ""
+            if fundo_sel_man and fundo_sel_man in mapa_fundo_dir:
+                dir_autocompletada = mapa_fundo_dir[fundo_sel_man]
+
+            val_partida_inicial = dir_autocompletada if dir_autocompletada else grl.get('punto_partida', '')
+            v_partida = st.text_input(
+                "Partida (Dirección)", 
+                value=formato_nompropio(val_partida_inicial),
+                key=f"input_partida_{empresa_sel_man}_{fundo_sel_man}"
+            )
+        else:
+            v_partida = st.text_input("Partida", formato_nompropio(grl.get('punto_partida', '')))
         v_llegada = st.text_input("Llegada", formato_nompropio(grl.get('punto_llegada', '')))
         v_dest = st.text_input("Destinatario", grl.get('destinatario', ''))
 
-        v_items_df = st.data_editor(df_items, num_rows="dynamic", use_container_width=True)
+        v_items_df = st.data_editor(
+            df_items,
+            num_rows="dynamic",
+            use_container_width=True,
+            column_config={
+                "peso": st.column_config.TextColumn("Peso (Kg)"),
+                "desc": st.column_config.TextColumn("Descripción"),
+                "cant": st.column_config.TextColumn("Cantidad"),
+                "um": st.column_config.TextColumn("Medida"),
+                "fecha_origen": st.column_config.TextColumn("Fecha"),
+                "guia_origen": st.column_config.TextColumn("N° Guía"),
+                "placa_origen": st.column_config.TextColumn("Placa")
+            }
+        )
+
+        # Sincronizar memoria persistente si el usuario modificó o eliminó filas directamente en el editor
+        if not v_items_df.equals(st.session_state.get('df_items')):
+            st.session_state['df_items'] = v_items_df.copy()
+
+        # --- PANEL DE GESTIÓN Y ELIMINACIÓN DE FILAS ---
+        if not v_items_df.empty:
+            c_del1, c_del2, c_del3 = st.columns([3, 1.2, 1.2])
+            opciones_filas = []
+            for idx_f, r in v_items_df.iterrows():
+                desc_val = str(r.get('desc', '')).strip()
+                desc_corta = (desc_val[:32] + '...') if len(desc_val) > 32 else (desc_val or "Sin descripción")
+                cant_val = str(r.get('cant', '')).strip()
+                um_val = str(r.get('um', '')).strip()
+                peso_val = str(r.get('peso', '')).strip()
+                guia_val = str(r.get('guia_origen', '')).strip()
+                det_extra = f" | Guía: {guia_val}" if guia_val else ""
+                opciones_filas.append(f"Fila {idx_f + 1}: {desc_corta} ({cant_val} {um_val} - {peso_val} KG){det_extra}")
+
+            with c_del1:
+                fila_a_eliminar_idx = st.selectbox(
+                    "🗑️ Seleccionar fila a eliminar:",
+                    options=list(range(len(v_items_df))),
+                    format_func=lambda i: opciones_filas[i] if i < len(opciones_filas) else f"Fila {i + 1}",
+                    key="sel_eliminar_fila"
+                )
+
+            with c_del2:
+                st.write("")
+                st.write("")
+                if st.button("🗑️ Eliminar Fila", type="secondary", use_container_width=True, key="btn_borrar_fila_sel"):
+                    if len(v_items_df) <= 1:
+                        st.warning("⚠️ La tabla debe conservar al menos una fila para generar el certificado.")
+                    else:
+                        df_mod = v_items_df.drop(index=fila_a_eliminar_idx).reset_index(drop=True)
+                        st.session_state['df_items'] = df_mod
+                        st.toast(f"✅ Fila {fila_a_eliminar_idx + 1} eliminada correctamente.")
+                        st.rerun()
+
+            with c_del3:
+                st.write("")
+                st.write("")
+                if st.button("🧹 Limpiar Vacías", use_container_width=True, key="btn_limpiar_filas_vacias", help="Elimina filas sin descripción o completamente en blanco"):
+                    if 'desc' in v_items_df.columns:
+                        mask_validas = v_items_df['desc'].astype(str).str.strip().ne('') & v_items_df['desc'].astype(str).str.upper().ne('NAN')
+                        cant_vacias = len(v_items_df) - mask_validas.sum()
+                        if cant_vacias > 0:
+                            df_sin_vacias = v_items_df[mask_validas].reset_index(drop=True)
+                            if df_sin_vacias.empty:
+                                st.warning("⚠️ Todas las filas estaban vacías. Se conservó 1 fila para editar.")
+                            else:
+                                st.session_state['df_items'] = df_sin_vacias
+                                st.toast(f"🧹 Se eliminaron {cant_vacias} fila(s) vacía(s).")
+                                st.rerun()
+                        else:
+                            st.info("No hay filas vacías para eliminar.")
 
         from src.services.google_service import leer_sheet_seguro
         if 'repo' not in st.session_state:
@@ -691,7 +868,17 @@ if modulo_actual == "📄 Generador de Certificados":
                 from src.services.google_service import obtener_clientes_desde_sheets
                 diccionario_clientes = obtener_clientes_desde_sheets()
                 opciones_clientes = [""] + list(diccionario_clientes.keys())
-                v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes)
+                
+                # Sincronización automática con la empresa elegida arriba en modo manual
+                idx_default_cli = 0
+                emp_sel_arriba = locals().get('empresa_sel_man', '')
+                if emp_sel_arriba and emp_sel_arriba != "-- Seleccionar Empresa --":
+                    for i_op, op in enumerate(opciones_clientes):
+                        if op.strip().upper() == emp_sel_arriba.strip().upper():
+                            idx_default_cli = i_op
+                            break
+
+                v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes, index=idx_default_cli)
                 
                 ruc_encontrado = diccionario_clientes.get(v_cli, "") if v_cli else ""
                 v_ruc_c = st.text_input("RUC Cliente", value=ruc_encontrado)
@@ -808,8 +995,47 @@ if modulo_actual == "📄 Generador de Certificados":
         else:
             modalidad_gen = "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)"
         
+        # --- VERIFICACIÓN DE CONSISTENCIA ENTRE PLACA Y GUÍA ANTES DE GENERAR ---
+        inconsistencias_tabla = validar_inconsistencias_df(v_items_df)
+        estado_cab, msg_cab = verificar_consistencia_guia_placa(v_guia, v_placa)
+        hay_error_placa_guia = (estado_cab != 'OK') or bool(inconsistencias_tabla)
+
+        confirmar_forzar = False
+        if hay_error_placa_guia:
+            with st.container(border=True):
+                st.error("⛔ **Atención: Se detectó un posible cruce entre Número de Guía y Placa**")
+                if estado_cab != 'OK':
+                    st.markdown(f"- **En los campos principales:** {msg_cab}")
+                for inc in inconsistencias_tabla:
+                    st.markdown(f"- **Fila {inc['fila']} de la tabla:** {inc['detalle']}")
+
+                c_fix1, c_fix2 = st.columns([1, 1])
+                with c_fix1:
+                    if st.button("🔄 Intercambiar Placa y Guía en toda la tabla", key="btn_fix_swap_gen", use_container_width=True):
+                        df_tmp = v_items_df.copy()
+                        if 'guia_origen' in df_tmp.columns and 'placa_origen' in df_tmp.columns:
+                            tmp_col = df_tmp['guia_origen'].copy()
+                            df_tmp['guia_origen'] = df_tmp['placa_origen']
+                            df_tmp['placa_origen'] = tmp_col
+                            st.session_state['df_items'] = df_tmp
+                        if 'ocr_data' in st.session_state and isinstance(st.session_state['ocr_data'], dict):
+                            st.session_state['ocr_data']['serie'], st.session_state['ocr_data']['vehiculo'] = (
+                                st.session_state['ocr_data'].get('vehiculo', ''),
+                                st.session_state['ocr_data'].get('serie', '')
+                            )
+                        st.toast("✅ Valores de Guía y Placa intercambiados correctamente.")
+                        st.rerun()
+                with c_fix2:
+                    confirmar_forzar = st.checkbox(
+                        "⚠️ Confirmar que los datos son correctos a pesar de la advertencia",
+                        key="chk_forzar_placa_guia"
+                    )
+
         # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
         if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
+            if hay_error_placa_guia and not confirmar_forzar:
+                st.error("⛔ Operación detenida: Corrige el número de Placa / Guía o marca la casilla de confirmación para proceder.")
+                st.stop()
             if locals().get('repositorio_masivo', False):
                 if st.session_state.get('repo_tipo_flujo'):
                     tipo_flujo = st.session_state['repo_tipo_flujo']

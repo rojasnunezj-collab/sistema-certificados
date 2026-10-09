@@ -92,7 +92,7 @@ def inyectar_tabla_en_docx(doc_io, data_items):
         for i, col in enumerate(table.columns):
             col.width = widths[i]
         
-        encabezados = ['Fecha', 'Placa', 'N° Guía', 'Descripción', 'Cantidad', 'Medida', 'Peso']
+        encabezados = ['Fecha', 'Placa', 'N° Guía', 'Descripción', 'Cantidad', 'Medida', 'Peso (Kg)']
         hdr_cells = table.rows[0].cells
         for i, nombre in enumerate(encabezados):
             cell = hdr_cells[i]
