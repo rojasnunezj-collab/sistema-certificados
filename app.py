@@ -480,6 +480,11 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.session_state['form_ruc_ocr'] = grl.get('ruc_cliente') or grl.get('ruc') or ""
                     st.session_state.pop('form_corr', None)
                     st.session_state.pop('form_fec_emis', None)
+                    st.session_state.pop('input_partida_man', None)
+                    st.session_state.pop('input_cli_ocr', None)
+                    st.session_state.pop('input_ruc_ocr', None)
+                    st.session_state.pop('_prev_cli_ocr', None)
+                    st.session_state.pop('v_items_working', None)
                     st.success(f"✅ Procesado, Limpiado y Ordenado: {len(items)} items de {total} archivos.")
                 else: st.error("❌ Falló: No se encontraron items.")
 
@@ -512,6 +517,16 @@ if modulo_actual == "📄 Generador de Certificados":
             st.session_state['form_ruc_man'] = ''
             st.session_state.pop('form_corr', None)
             st.session_state.pop('form_fec_emis', None)
+            st.session_state.pop('input_partida_man', None)
+            st.session_state.pop('sel_manual_empresa', None)
+            st.session_state.pop('sel_manual_fundo', None)
+            st.session_state.pop('sel_cli_manual', None)
+            st.session_state.pop('input_ruc_man', None)
+            st.session_state.pop('_prev_empresa_sel', None)
+            st.session_state.pop('_prev_fundo_sel', None)
+            st.session_state.pop('_prev_emp_arriba_sync', None)
+            st.session_state.pop('_prev_cli_man', None)
+            st.session_state.pop('v_items_working', None)
             st.rerun()
 
     # ====================================================================
@@ -601,9 +616,9 @@ if modulo_actual == "📄 Generador de Certificados":
             v_fec_emis = st.text_input("F. Emisión", value=st.session_state['form_fec_emis'], key="form_fec_emis")
         
         # Extraemos la guía y placa LIMPIAS desde la tabla procesada
-        guia_limpia = df_items['guia_origen'].iloc[0] if not df_items.empty else grl.get('serie', '')
+        guia_limpia = df_items['guia_origen'].iloc[0] if (not df_items.empty and 'guia_origen' in df_items.columns) else grl.get('serie', '')
         guia_limpia = limpiar_guia_o_factura(guia_limpia)
-        placa_limpia = df_items['placa_origen'].iloc[0] if not df_items.empty else grl.get('vehiculo', '')
+        placa_limpia = df_items['placa_origen'].iloc[0] if (not df_items.empty and 'placa_origen' in df_items.columns) else grl.get('vehiculo', '')
         
         if 'form_guia' not in st.session_state:
             st.session_state['form_guia'] = guia_limpia
@@ -664,8 +679,11 @@ if modulo_actual == "📄 Generador de Certificados":
                 repo["direcciones"] = df_dir_bd
 
             # Lista alfabética unificada de empresas desde CLIENTES y Direcciones
-            lista_emp_cli = df_clientes_bd['EMPRESA'].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_clientes_bd.empty and 'EMPRESA' in df_clientes_bd.columns else []
-            lista_emp_dir = df_dir_bd['EMPRESA'].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_dir_bd.empty and 'EMPRESA' in df_dir_bd.columns else []
+            col_emp_cli = next((c for c in df_clientes_bd.columns if 'EMPRESA' in str(c).upper() or 'CLIENTE' in str(c).upper()), 'EMPRESA') if not df_clientes_bd.empty else 'EMPRESA'
+            col_emp_dir = next((c for c in df_dir_bd.columns if 'EMPRESA' in str(c).upper() or 'CLIENTE' in str(c).upper()), 'EMPRESA') if not df_dir_bd.empty else 'EMPRESA'
+            
+            lista_emp_cli = df_clientes_bd[col_emp_cli].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_clientes_bd.empty and col_emp_cli in df_clientes_bd.columns else []
+            lista_emp_dir = df_dir_bd[col_emp_dir].dropna().astype(str).str.strip().str.upper().unique().tolist() if not df_dir_bd.empty and col_emp_dir in df_dir_bd.columns else []
             empresas_unicas = sorted(list(set(lista_emp_cli + lista_emp_dir)))
 
             c_emp_man, c_fnd_man = st.columns(2)
@@ -679,12 +697,16 @@ if modulo_actual == "📄 Generador de Certificados":
             opciones_fundos = []
             mapa_fundo_dir = {}
             if empresa_sel_man and empresa_sel_man != "-- Seleccionar Empresa --":
-                if not df_dir_bd.empty and 'EMPRESA' in df_dir_bd.columns:
-                    mask_emp = df_dir_bd['EMPRESA'].astype(str).str.strip().str.upper() == empresa_sel_man
+                if not df_dir_bd.empty:
+                    c_emp_dir_b = next((c for c in df_dir_bd.columns if 'EMPRESA' in str(c).upper() or 'CLIENTE' in str(c).upper()), 'EMPRESA')
+                    c_fnd_dir_b = next((c for c in df_dir_bd.columns if 'FUNDO' in str(c).upper() or 'PLANTA' in str(c).upper()), 'FUNDO/PLANTA')
+                    c_dir_dir_b = next((c for c in df_dir_bd.columns if 'DIRECCION' in str(c).upper() or 'DIRECCIÓN' in str(c).upper()), 'DIRECCION')
+                    
+                    mask_emp = df_dir_bd[c_emp_dir_b].astype(str).str.strip().str.upper() == empresa_sel_man.strip().upper()
                     df_emp_dir = df_dir_bd[mask_emp]
                     for _, r_dir in df_emp_dir.iterrows():
-                        fnd_nom = str(r_dir.get('FUNDO/PLANTA', '')).strip()
-                        dir_txt = str(r_dir.get('DIRECCION', '')).strip()
+                        fnd_nom = str(r_dir.get(c_fnd_dir_b, '')).strip()
+                        dir_txt = str(r_dir.get(c_dir_dir_b, '')).strip()
                         if fnd_nom and fnd_nom.upper() not in ['NAN', 'NONE']:
                             opciones_fundos.append(fnd_nom)
                             mapa_fundo_dir[fnd_nom] = dir_txt
@@ -693,8 +715,9 @@ if modulo_actual == "📄 Generador de Certificados":
                             mapa_fundo_dir["DIRECCIÓN PRINCIPAL"] = dir_txt
 
                 # Si no está en Direcciones, buscar en Clientes
-                if not mapa_fundo_dir and not df_clientes_bd.empty and 'EMPRESA' in df_clientes_bd.columns:
-                    df_emp_c = df_clientes_bd[df_clientes_bd['EMPRESA'].astype(str).str.strip().str.upper() == empresa_sel_man]
+                if not mapa_fundo_dir and not df_clientes_bd.empty:
+                    c_emp_cli_b = next((c for c in df_clientes_bd.columns if 'EMPRESA' in str(c).upper() or 'CLIENTE' in str(c).upper()), 'EMPRESA')
+                    df_emp_c = df_clientes_bd[df_clientes_bd[c_emp_cli_b].astype(str).str.strip().str.upper() == empresa_sel_man.strip().upper()]
                     if not df_emp_c.empty:
                         d_cert = str(df_emp_c.iloc[0].get('DIRECCION CERTIFICADO', '')).strip()
                         d_fisc = str(df_emp_c.iloc[0].get('DOMICILIO FISCAL', '')).strip()
@@ -723,15 +746,16 @@ if modulo_actual == "📄 Generador de Certificados":
                 empresa_sel_man != st.session_state.get('_prev_empresa_sel') or
                 fundo_sel_man != st.session_state.get('_prev_fundo_sel')
             )
-            if 'form_partida_man' not in st.session_state or cambio_ubicacion:
+            if 'input_partida_man' not in st.session_state or cambio_ubicacion:
                 val_partida_inicial = dir_autocompletada if dir_autocompletada else grl.get('punto_partida', '')
-                st.session_state['form_partida_man'] = formato_nompropio(val_partida_inicial)
+                dir_formateada = formato_nompropio(val_partida_inicial)
+                st.session_state['form_partida_man'] = dir_formateada
+                st.session_state['input_partida_man'] = dir_formateada
                 st.session_state['_prev_empresa_sel'] = empresa_sel_man
                 st.session_state['_prev_fundo_sel'] = fundo_sel_man
 
             v_partida = st.text_input(
                 "Partida (Dirección)", 
-                value=st.session_state.get('form_partida_man', ''),
                 key="input_partida_man"
             )
             st.session_state['form_partida_man'] = v_partida
@@ -1019,40 +1043,78 @@ if modulo_actual == "📄 Generador de Certificados":
             elif modo_manual:
                 from src.services.google_service import obtener_clientes_desde_sheets
                 diccionario_clientes = obtener_clientes_desde_sheets()
-                opciones_clientes = [""] + list(diccionario_clientes.keys())
+                
+                lista_nombres_cli = list(diccionario_clientes.keys())
+                lista_extra_emp = [e for e in locals().get('empresas_unicas', []) if e != "-- Seleccionar Empresa --"]
+                todos_clientes = sorted(list(set(lista_nombres_cli + lista_extra_emp)))
+                opciones_clientes = [""] + todos_clientes
+                
+                emp_sel_arriba = locals().get('empresa_sel_man', '')
                 
                 # Sincronización automática con la empresa elegida arriba en modo manual
+                cambio_emp_arriba = (emp_sel_arriba != st.session_state.get('_prev_emp_arriba_sync'))
+                if cambio_emp_arriba:
+                    if emp_sel_arriba and emp_sel_arriba != "-- Seleccionar Empresa --":
+                        match_op = next((op for op in opciones_clientes if op.strip().upper() == emp_sel_arriba.strip().upper()), None)
+                        if match_op:
+                            st.session_state['sel_cli_manual'] = match_op
+                    st.session_state['_prev_emp_arriba_sync'] = emp_sel_arriba
+
+                # Calcular índice por defecto
                 idx_default_cli = 0
-                emp_sel_arriba = locals().get('empresa_sel_man', '')
-                if emp_sel_arriba and emp_sel_arriba != "-- Seleccionar Empresa --":
+                cli_actual = st.session_state.get('sel_cli_manual', '')
+                if cli_actual and cli_actual in opciones_clientes:
+                    idx_default_cli = opciones_clientes.index(cli_actual)
+                elif emp_sel_arriba and emp_sel_arriba != "-- Seleccionar Empresa --":
                     for i_op, op in enumerate(opciones_clientes):
                         if op.strip().upper() == emp_sel_arriba.strip().upper():
                             idx_default_cli = i_op
                             break
 
-                v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes, index=idx_default_cli, key="sel_cli_manual")
+                v_cli = st.selectbox(
+                    "Cliente (Desde Base de Datos)", 
+                    options=opciones_clientes, 
+                    index=idx_default_cli, 
+                    key="sel_cli_manual"
+                )
                 
+                # Buscar RUC correspondiente al cliente seleccionado
                 ruc_encontrado = diccionario_clientes.get(v_cli, "") if v_cli else ""
+                df_cli_actual = locals().get('df_clientes_bd', pd.DataFrame())
+                if not ruc_encontrado and v_cli and not df_cli_actual.empty:
+                    col_r_emp = next((c for c in df_cli_actual.columns if 'EMPRESA' in str(c).upper() or 'CLIENTE' in str(c).upper()), 'EMPRESA')
+                    col_r_ruc = next((c for c in df_cli_actual.columns if 'RUC' in str(c).upper()), 'RUC')
+                    if col_r_emp in df_cli_actual.columns and col_r_ruc in df_cli_actual.columns:
+                        match_row = df_cli_actual[df_cli_actual[col_r_emp].astype(str).str.strip().str.upper() == str(v_cli).strip().upper()]
+                        if not match_row.empty:
+                            ruc_encontrado = str(match_row.iloc[0].get(col_r_ruc, '')).strip()
+
                 cambio_cli = (v_cli != st.session_state.get('_prev_cli_man'))
-                if 'form_ruc_man' not in st.session_state or cambio_cli:
+                if cambio_cli or 'input_ruc_man' not in st.session_state:
+                    st.session_state['input_ruc_man'] = ruc_encontrado
                     st.session_state['form_ruc_man'] = ruc_encontrado
                     st.session_state['_prev_cli_man'] = v_cli
-                v_ruc_c = st.text_input("RUC Cliente", value=st.session_state['form_ruc_man'], key="input_ruc_man")
+                
+                v_ruc_c = st.text_input("RUC Cliente", key="input_ruc_man")
                 st.session_state['form_ruc_man'] = v_ruc_c
             else:
                 from src.services.google_service import obtener_clientes_desde_sheets
                 diccionario_clientes = obtener_clientes_desde_sheets()
                 
-                if 'form_cli_ocr' not in st.session_state or not st.session_state.get('form_cli_ocr'):
-                    st.session_state['form_cli_ocr'] = cliente_ocr
-                v_cli = st.text_input("Cliente (Extraído)", value=st.session_state['form_cli_ocr'], key="input_cli_ocr")
+                cli_defecto = cliente_ocr or st.session_state.get('repo_empresa', '')
+                if 'input_cli_ocr' not in st.session_state:
+                    st.session_state['input_cli_ocr'] = st.session_state.get('form_cli_ocr') or cli_defecto
+                v_cli = st.text_input("Cliente (Extraído)", key="input_cli_ocr")
                 st.session_state['form_cli_ocr'] = v_cli
                 
                 # Autocompletado robusto: Si hace match con BD, usa su RUC. Si no, usa el extraído crudo de IA
                 ruc_calculado = diccionario_clientes.get(str(v_cli).strip().upper(), ruc_crudo)
-                if 'form_ruc_ocr' not in st.session_state or not st.session_state.get('form_ruc_ocr'):
+                cambio_cli_ocr = (v_cli != st.session_state.get('_prev_cli_ocr'))
+                if cambio_cli_ocr or 'input_ruc_ocr' not in st.session_state:
+                    st.session_state['input_ruc_ocr'] = ruc_calculado
                     st.session_state['form_ruc_ocr'] = ruc_calculado
-                v_ruc_c = st.text_input("RUC Cliente", value=st.session_state['form_ruc_ocr'], key="input_ruc_ocr")
+                    st.session_state['_prev_cli_ocr'] = v_cli
+                v_ruc_c = st.text_input("RUC Cliente", key="input_ruc_ocr")
                 st.session_state['form_ruc_ocr'] = v_ruc_c
             
             v_serv = st.selectbox(
@@ -1142,7 +1204,7 @@ if modulo_actual == "📄 Generador de Certificados":
             if 'guia_origen' in v_items_df.columns:
                 v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
         st.session_state['v_items_working'] = v_items_df
-        guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+        guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']] if 'guia_origen' in v_items_df.columns else []
         if len(guias_unicas_prev) > 1:
             modalidad_gen = st.radio("Modalidad de Generación", [
                 "Agrupada (Fusionar las guías seleccionadas en 1 solo certificado)", 
@@ -1221,7 +1283,7 @@ if modulo_actual == "📄 Generador de Certificados":
             if drive:
                 try:
                     if "Individual" in modalidad_gen:
-                        guias_unicas = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+                        guias_unicas = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']] if 'guia_origen' in v_items_df.columns else []
                         if not guias_unicas: guias_unicas = ["S/N"]
                         
                         corr_actual_int = int(str(v_corr).strip() or 1)
@@ -1234,7 +1296,7 @@ if modulo_actual == "📄 Generador de Certificados":
                         for idx, archivo in enumerate(guias_unicas):
                             st.toast(f"Procesando guía {archivo}...")
                             try:
-                                df_filtrado = v_items_df[v_items_df['guia_origen'] == archivo] if archivo != "S/N" else v_items_df
+                                df_filtrado = v_items_df[v_items_df['guia_origen'] == archivo] if ('guia_origen' in v_items_df.columns and archivo != "S/N") else v_items_df
                                 corr_str = f"{corr_actual_int:03d}"
                                 
                                 if es_modelo:
