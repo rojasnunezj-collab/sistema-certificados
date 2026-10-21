@@ -468,6 +468,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     df = df.drop(columns=['_llave_orden']).reset_index(drop=True)
 
                     st.session_state['df_items'] = df
+                    st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                     
                     # Sincronizar datos extraídos hacia los campos de cabecera en sesión
                     st.session_state['form_guia'] = limpiar_guia_o_factura(df['guia_origen'].iloc[0] if not df.empty else grl.get('serie', ''))
@@ -500,6 +501,7 @@ if modulo_actual == "📄 Generador de Certificados":
                 'guia_origen': '', 'placa_origen': ''
             }])
             st.session_state['df_items'] = df_vacio
+            st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
             st.session_state['form_guia'] = ''
             st.session_state['form_placa'] = ''
             st.session_state['form_partida'] = ''
@@ -603,9 +605,9 @@ if modulo_actual == "📄 Generador de Certificados":
         guia_limpia = limpiar_guia_o_factura(guia_limpia)
         placa_limpia = df_items['placa_origen'].iloc[0] if not df_items.empty else grl.get('vehiculo', '')
         
-        if 'form_guia' not in st.session_state or not st.session_state.get('form_guia'):
+        if 'form_guia' not in st.session_state:
             st.session_state['form_guia'] = guia_limpia
-        if 'form_placa' not in st.session_state or not st.session_state.get('form_placa'):
+        if 'form_placa' not in st.session_state:
             st.session_state['form_placa'] = placa_limpia
 
         val_guia_mostrada = st.session_state['form_guia'] if modo_manual else guia_limpia
@@ -614,8 +616,7 @@ if modulo_actual == "📄 Generador de Certificados":
         # Si estamos en manual, siguen desbloqueadas para escribir
         v_guia_in = c3.text_input("Guía", value=val_guia_mostrada, disabled=not modo_manual, key="input_guia_txt")
         v_guia = limpiar_guia_o_factura(v_guia_in)
-        if v_guia != v_guia_in:
-            st.session_state['form_guia'] = v_guia
+        st.session_state['form_guia'] = v_guia
 
         v_placa = c4.text_input("Placa", value=val_placa_mostrada, disabled=not modo_manual, key="input_placa_txt")
         st.session_state['form_placa'] = v_placa
@@ -628,13 +629,14 @@ if modulo_actual == "📄 Generador de Certificados":
                 st.warning(f"⚠️ **Inconsistencia detectada:** {msg_diag}")
             with c_diag2:
                 if st.button("🔄 Intercambiar Placa ⇄ Guía", key="btn_swap_cabecera", use_container_width=True):
-                    if 'df_items' in st.session_state and not st.session_state['df_items'].empty:
-                        df_sw = st.session_state['df_items'].copy()
-                        if 'guia_origen' in df_sw.columns and 'placa_origen' in df_sw.columns:
-                            tmp_g = df_sw['guia_origen'].copy()
-                            df_sw['guia_origen'] = df_sw['placa_origen']
-                            df_sw['placa_origen'] = tmp_g
-                            st.session_state['df_items'] = df_sw
+                    df_sw = st.session_state.get('v_items_working', st.session_state.get('df_items', pd.DataFrame())).copy()
+                    if not df_sw.empty and 'guia_origen' in df_sw.columns and 'placa_origen' in df_sw.columns:
+                        tmp_g = df_sw['guia_origen'].copy()
+                        df_sw['guia_origen'] = df_sw['placa_origen']
+                        df_sw['placa_origen'] = tmp_g
+                        st.session_state['df_items'] = df_sw
+                        st.session_state['v_items_working'] = df_sw
+                        st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                     if 'ocr_data' in st.session_state and isinstance(st.session_state['ocr_data'], dict):
                         ocr_sw = st.session_state['ocr_data'].copy()
                         s_sw = ocr_sw.get('serie', '')
@@ -717,13 +719,20 @@ if modulo_actual == "📄 Generador de Certificados":
             if fundo_sel_man and fundo_sel_man in mapa_fundo_dir:
                 dir_autocompletada = mapa_fundo_dir[fundo_sel_man]
 
-            val_partida_inicial = dir_autocompletada if dir_autocompletada else grl.get('punto_partida', '')
-            if 'form_partida_man' not in st.session_state or dir_autocompletada:
+            cambio_ubicacion = (
+                empresa_sel_man != st.session_state.get('_prev_empresa_sel') or
+                fundo_sel_man != st.session_state.get('_prev_fundo_sel')
+            )
+            if 'form_partida_man' not in st.session_state or cambio_ubicacion:
+                val_partida_inicial = dir_autocompletada if dir_autocompletada else grl.get('punto_partida', '')
                 st.session_state['form_partida_man'] = formato_nompropio(val_partida_inicial)
+                st.session_state['_prev_empresa_sel'] = empresa_sel_man
+                st.session_state['_prev_fundo_sel'] = fundo_sel_man
+
             v_partida = st.text_input(
                 "Partida (Dirección)", 
-                value=st.session_state.get('form_partida_man', formato_nompropio(val_partida_inicial)),
-                key=f"input_partida_{empresa_sel_man}_{fundo_sel_man}"
+                value=st.session_state.get('form_partida_man', ''),
+                key="input_partida_man"
             )
             st.session_state['form_partida_man'] = v_partida
         else:
@@ -770,7 +779,10 @@ if modulo_actual == "📄 Generador de Certificados":
                 if len(cols_activas) <= 1:
                     st.warning("⚠️ Debe conservar al menos una columna en la tabla.")
                 else:
+                    if st.session_state.get('v_items_working') is not None:
+                        st.session_state['df_items'] = st.session_state['v_items_working'].copy()
                     st.session_state['tabla_columnas_config'] = [c for c in cols_activas if c['id'] != col_a_borrar]
+                    st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                     st.toast("✅ Columna eliminada de la tabla.")
                     st.rerun()
 
@@ -791,12 +803,18 @@ if modulo_actual == "📄 Generador de Certificados":
                     with c_btn_r:
                         st.write("")
                         if st.button("➕ Restaurar", key="btn_ejecutar_restaurar"):
+                            if st.session_state.get('v_items_working') is not None:
+                                st.session_state['df_items'] = st.session_state['v_items_working'].copy()
                             item_res = next(c.copy() for c in DEFAULT_COLUMNAS_CONFIG if c['id'] == col_sel_res)
                             st.session_state['tabla_columnas_config'].append(item_res)
+                            st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                             st.rerun()
             with c_rest2:
                 if st.button("🔄 Restablecer Predeterminados", key="btn_reset_default_cols", help="Restaura las 7 columnas originales con sus nombres por defecto"):
+                    if st.session_state.get('v_items_working') is not None:
+                        st.session_state['df_items'] = st.session_state['v_items_working'].copy()
                     st.session_state['tabla_columnas_config'] = [c.copy() for c in DEFAULT_COLUMNAS_CONFIG]
+                    st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                     st.rerun()
 
         cols_activas = st.session_state['tabla_columnas_config']
@@ -814,30 +832,26 @@ if modulo_actual == "📄 Generador de Certificados":
             
         df_para_editor = df_items[ids_activas].copy()
 
+        if 'editor_version' not in st.session_state:
+            st.session_state['editor_version'] = 0
+
+        editor_key = f"v_items_editor_v{st.session_state['editor_version']}"
+
         v_items_df = st.data_editor(
             df_para_editor,
             num_rows="dynamic",
             use_container_width=True,
             column_config=col_config_editor,
-            key="v_items_df_editor"
+            key=editor_key
         )
 
-        # Limpieza automática de guías y facturas en la tabla (ej: F004-0001402 -> F004-1402)
+        # Limpieza automática de guías y facturas en la tabla de trabajo
         if 'guia_origen' in v_items_df.columns:
             v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
 
-        # Sincronizar memoria persistente si el usuario modificó o eliminó filas directamente en el editor
-        if len(v_items_df) != len(df_items):
-            df_nuevo = v_items_df.copy()
-            for c_extra in df_items.columns:
-                if c_extra not in df_nuevo.columns:
-                    df_nuevo[c_extra] = ""
-            st.session_state['df_items'] = df_nuevo
-            df_items = df_nuevo
-        else:
-            for cid in ids_activas:
-                df_items[cid] = v_items_df[cid]
-            st.session_state['df_items'] = df_items
+        # Preservar siempre los datos editados en memoria de trabajo sin alterar df_items
+        # para que Streamlit mantenga el editor estable sin recargarlo ni borrar celdas
+        st.session_state['v_items_working'] = v_items_df
 
         # --- PANEL DE GESTIÓN Y ELIMINACIÓN DE FILAS ---
         if not v_items_df.empty:
@@ -870,6 +884,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     else:
                         df_mod = v_items_df.drop(index=fila_a_eliminar_idx).reset_index(drop=True)
                         st.session_state['df_items'] = df_mod
+                        st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                         st.toast(f"✅ Fila {fila_a_eliminar_idx + 1} eliminada correctamente.")
                         st.rerun()
 
@@ -886,6 +901,7 @@ if modulo_actual == "📄 Generador de Certificados":
                                 st.warning("⚠️ Todas las filas estaban vacías. Se conservó 1 fila para editar.")
                             else:
                                 st.session_state['df_items'] = df_sin_vacias
+                                st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                                 st.toast(f"🧹 Se eliminaron {cant_vacias} fila(s) vacía(s).")
                                 st.rerun()
                         else:
@@ -1017,8 +1033,10 @@ if modulo_actual == "📄 Generador de Certificados":
                 v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes, index=idx_default_cli, key="sel_cli_manual")
                 
                 ruc_encontrado = diccionario_clientes.get(v_cli, "") if v_cli else ""
-                if 'form_ruc_man' not in st.session_state or ruc_encontrado:
+                cambio_cli = (v_cli != st.session_state.get('_prev_cli_man'))
+                if 'form_ruc_man' not in st.session_state or cambio_cli:
                     st.session_state['form_ruc_man'] = ruc_encontrado
+                    st.session_state['_prev_cli_man'] = v_cli
                 v_ruc_c = st.text_input("RUC Cliente", value=st.session_state['form_ruc_man'], key="input_ruc_man")
                 st.session_state['form_ruc_man'] = v_ruc_c
             else:
@@ -1123,17 +1141,7 @@ if modulo_actual == "📄 Generador de Certificados":
         else:
             if 'guia_origen' in v_items_df.columns:
                 v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
-        # --- FIX ORDENAMIENTO GLOBAL ANTES DE GENERAR ---
-        if 'fecha_origen' in v_items_df.columns:
-            def fecha_a_entero_gen(fecha_str):
-                try:
-                    p = str(fecha_str).strip().split('/')
-                    if len(p) == 3: return int(f"{p[2]}{p[1]}{p[0]}")
-                except: pass
-                return 99999999 
-            v_items_df['_llave_orden'] = v_items_df['fecha_origen'].apply(fecha_a_entero_gen)
-            v_items_df = v_items_df.sort_values(by='_llave_orden', ascending=True).drop(columns=['_llave_orden']).reset_index(drop=True)
-
+        st.session_state['v_items_working'] = v_items_df
         guias_unicas_prev = [g for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
         if len(guias_unicas_prev) > 1:
             modalidad_gen = st.radio("Modalidad de Generación", [
@@ -1166,6 +1174,7 @@ if modulo_actual == "📄 Generador de Certificados":
                             df_tmp['guia_origen'] = df_tmp['placa_origen']
                             df_tmp['placa_origen'] = tmp_col
                             st.session_state['df_items'] = df_tmp
+                            st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
                         if 'ocr_data' in st.session_state and isinstance(st.session_state['ocr_data'], dict):
                             st.session_state['ocr_data']['serie'], st.session_state['ocr_data']['vehiculo'] = (
                                 st.session_state['ocr_data'].get('vehiculo', ''),
@@ -1184,6 +1193,21 @@ if modulo_actual == "📄 Generador de Certificados":
             if hay_error_placa_guia and not confirmar_forzar:
                 st.error("⛔ Operación detenida: Corrige el número de Placa / Guía o marca la casilla de confirmación para proceder.")
                 st.stop()
+
+            # --- ORDENAMIENTO CRONOLÓGICO PARA EL DOCUMENTO ---
+            if 'fecha_origen' in v_items_df.columns:
+                def fecha_a_entero_gen(fecha_str):
+                    try:
+                        p = str(fecha_str).strip().split('/')
+                        if len(p) == 3: return int(f"{p[2]}{p[1]}{p[0]}")
+                    except: pass
+                    return 99999999 
+                v_items_df['_llave_orden'] = v_items_df['fecha_origen'].apply(fecha_a_entero_gen)
+                v_items_df = v_items_df.sort_values(by='_llave_orden', ascending=True).drop(columns=['_llave_orden']).reset_index(drop=True)
+
+            st.session_state['df_items'] = v_items_df.copy()
+            st.session_state['v_items_working'] = v_items_df.copy()
+            st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
             if locals().get('repositorio_masivo', False):
                 if st.session_state.get('repo_tipo_flujo'):
                     tipo_flujo = st.session_state['repo_tipo_flujo']
