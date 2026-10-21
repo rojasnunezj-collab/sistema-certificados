@@ -6,7 +6,7 @@ from googleapiclient.discovery import build
 from src.config.settings import ID_SHEET_CONTROL
 from src.services.google_service import obtener_servicios, descargar_guias_drive
 from src.services.vertex_service import procesar_guia_ia_vertex_sigersol
-from src.utils.format_utils import limpiar_monto, formato_inteligente
+from src.utils.format_utils import limpiar_monto, formato_inteligente, limpiar_guia_o_factura
 import time
 
 # ID del destino dado en el prompt
@@ -139,7 +139,7 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
                 str(row.get('EMPRESA GENERADORA', '')), # D
                 str(row.get('RUC', '')), # E
                 str(row.get('DIRECCION DEL GENERADOR', '')), # F
-                str(row.get('N° GUIA (SUNAT)', '')), # G
+                str(limpiar_guia_o_factura(row.get('N° GUIA (SUNAT)', ''))), # G
                 "", # H
                 str(row.get('DESCRIPCION DE RESIDUOS', '')), # I
                 "", # J
@@ -303,8 +303,8 @@ def render_sigersol():
         # Lógica de Guía: La información que va a SUNAT es directamente la de la Columna B
         guia_original = str(row.get(col_guia_original, ''))
         
-        # Según la indicación, debemos dar como resultado la columna B
-        guia_sunat = guia_original
+        # Según la indicación, debemos dar como resultado la columna B limpia (F004-1402)
+        guia_sunat = limpiar_guia_o_factura(guia_original)
         
         empresa_gen = str(row.get(col_empresa, ''))
         ruc_gen = datos_empresas.get(empresa_gen.upper(), {}).get('ruc', '')

@@ -604,6 +604,7 @@ def actualizar_bitacora_guias(servicio_sheets, filas):
 
 def buscar_actualizar_guia(servicio_sheets, num_guia):
     from datetime import datetime, timedelta
+    import re
     if not servicio_sheets or not str(num_guia).strip() or str(num_guia).strip() == "S/N": return False
     try:
         r = servicio_sheets.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range="'Guias_recibidas'!A2:H").execute()
@@ -612,16 +613,24 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
         hora_lima = datetime.utcnow() - timedelta(hours=5)
         marca = f"✅ Nuevo: {hora_lima.strftime('%d/%m/%Y %H:%M:%S')}"
         
+        def norm_g(s):
+            t = re.sub(r'(?i)[nº°\s_-]', '', str(s)).upper()
+            return "".join([p.lstrip('0') if p.isdigit() else p for p in re.findall(r'[A-Z]+|[0-9]+', t)])
+
+        target_norm = norm_g(num_guia)
+
         for i, fila in enumerate(v):
-            if len(fila) > 1 and str(fila[1]).strip().upper() == str(num_guia).strip().upper():
-                fila_excel = i + 2
-                body = {"values": [[marca]]}
-                servicio_sheets.spreadsheets().values().update(
-                    spreadsheetId=ID_SHEET_REPOSITORIO,
-                    range=f"'Guias_recibidas'!H{fila_excel}",
-                    valueInputOption="USER_ENTERED",
-                    body=body
-                ).execute()
+            if len(fila) > 1:
+                val_col = str(fila[1]).strip().upper()
+                if val_col == str(num_guia).strip().upper() or (target_norm and norm_g(val_col) == target_norm):
+                    fila_excel = i + 2
+                    body = {"values": [[marca]]}
+                    servicio_sheets.spreadsheets().values().update(
+                        spreadsheetId=ID_SHEET_REPOSITORIO,
+                        range=f"'Guias_recibidas'!H{fila_excel}",
+                        valueInputOption="USER_ENTERED",
+                        body=body
+                    ).execute()
         return True
     except Exception as e:
         print(f"Error actualizando marca de control {num_guia}: {e}")

@@ -9,6 +9,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
 from docx.oxml.simpletypes import ST_TwipsMeasure, Twips
+from src.utils.format_utils import limpiar_guia_o_factura
 
 # ====================================================================
 # --- BLOQUE 1: Parche Técnico Librearías Temporales (TwipsMeasure) ---
@@ -240,7 +241,22 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
 # ====================================================================
 # --- BLOQUE 3: Lógica Principal de Inyección Documental ---
 # ====================================================================
-def inyectar_tabla_en_docx(doc_io, data_items):
+DEFAULT_COLUMNAS_TABLA = [
+    {"id": "fecha_origen", "nombre": "Fecha", "width_ratio": 1.0},
+    {"id": "placa_origen", "nombre": "Placa", "width_ratio": 1.0},
+    {"id": "guia_origen", "nombre": "N° Guía", "width_ratio": 1.1},
+    {"id": "desc", "nombre": "Descripción", "width_ratio": 3.2},
+    {"id": "cant", "nombre": "Cantidad", "width_ratio": 0.9},
+    {"id": "um", "nombre": "Medida", "width_ratio": 0.9},
+    {"id": "peso", "nombre": "Peso (Kg)", "width_ratio": 1.0}
+]
+
+def inyectar_tabla_en_docx(doc_io, data_items, columnas_config=None):
+    """
+    Inyecta dinámicamente la tabla en el documento Word donde esté el marcador [[TABLA_NOTAS]].
+    Si columnas_config está presente, genera la tabla ÚNICAMENTE con las columnas especificadas
+    y usando los nombres de encabezados personalizados.
+    """
     doc = Document(doc_io)
     target_paragraph = None
     for p in doc.paragraphs:
@@ -254,7 +270,14 @@ def inyectar_tabla_en_docx(doc_io, data_items):
             if "CERTIFICADO" in p.text.upper():
                 p.paragraph_format.space_after = Pt(0)
         
-        table = doc.add_table(rows=1, cols=7)
+        # Determinar columnas activas
+        if not columnas_config or len(columnas_config) == 0:
+            cols_activas = DEFAULT_COLUMNAS_TABLA
+        else:
+            cols_activas = columnas_config
+            
+        num_cols = len(cols_activas)
+        table = doc.add_table(rows=1, cols=num_cols)
         try:
             table.style = 'Table Grid'
         except:
@@ -264,14 +287,32 @@ def inyectar_tabla_en_docx(doc_io, data_items):
         table.allow_autofit = False
         set_table_margins(table, top=72, bottom=72, left=30, right=30)
 
-        widths = [Inches(0.75), Inches(0.75), Inches(0.75), Inches(3.0), Inches(0.75), Inches(0.75), Inches(0.75)]
+        # Cálculo dinámico proporcional de anchos para ocupar ~7.0 pulgadas
+        ANCHO_TOTAL_DISPONIBLE = 7.0
+        ratios = []
+        for c in cols_activas:
+            r = c.get('width_ratio')
+            if r is None or r <= 0:
+                cid = str(c.get('id', '')).lower()
+                if 'desc' in cid:
+                    r = 3.0
+                elif any(x in cid for x in ['fecha', 'guia', 'placa']):
+                    r = 1.1
+                else:
+                    r = 0.9
+            ratios.append(float(r))
+            
+        total_ratios = sum(ratios) if sum(ratios) > 0 else float(num_cols)
+        widths = [Inches((r / total_ratios) * ANCHO_TOTAL_DISPONIBLE) for r in ratios]
+        
         for i, col in enumerate(table.columns):
             col.width = widths[i]
         
-        encabezados = ['Fecha', 'Placa', 'N° Guía', 'Descripción', 'Cantidad', 'Medida', 'Peso (Kg)']
+        # Inyectar fila de encabezados
         hdr_cells = table.rows[0].cells
-        for i, nombre in enumerate(encabezados):
+        for i, c_cfg in enumerate(cols_activas):
             cell = hdr_cells[i]
+            nombre = str(c_cfg.get('nombre', c_cfg.get('id', f'Col {i+1}'))).strip()
             cell.text = nombre
             cell.width = widths[i]
             cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
@@ -288,19 +329,19 @@ def inyectar_tabla_en_docx(doc_io, data_items):
                 run.font.name = 'Calibri'
                 run.font.size = Pt(9)
         
+        # Inyectar filas de datos con solo las columnas activas
         for item in data_items:
             row_cells = table.add_row().cells
-            vals = [
-                str(item.get('fecha_origen', '')),
-                str(item.get('placa_origen', '')),
-                str(item.get('guia_origen', '')),
-                str(item.get('desc', '')),
-                str(item.get('cant', '')),
-                str(item.get('um', '')).upper(),
-                str(item.get('peso', ''))
-            ]
-            
-            for idx, valor in enumerate(vals):
+            for idx, c_cfg in enumerate(cols_activas):
+                cid = c_cfg.get('id', '')
+                raw_val = item.get(cid, '')
+                if cid == 'um':
+                    valor = str(raw_val).upper()
+                elif cid == 'guia_origen':
+                    valor = limpiar_guia_o_factura(raw_val)
+                else:
+                    valor = str(raw_val) if raw_val is not None else ""
+                
                 cell = row_cells[idx]
                 cell.text = valor
                 cell.width = widths[idx]

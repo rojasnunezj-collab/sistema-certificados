@@ -30,13 +30,23 @@ from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
 from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
-    limpiar_descripcion, formatear_guia, obtener_fin_de_mes,
+    limpiar_descripcion, formatear_guia, limpiar_guia_o_factura, obtener_fin_de_mes,
     formato_nompropio, es_formato_guia, es_formato_placa,
     verificar_consistencia_guia_placa, validar_inconsistencias_df
 )
 from docxtpl import DocxTemplate
 import urllib.parse
 import requests
+
+DEFAULT_COLUMNAS_CONFIG = [
+    {"id": "fecha_origen", "nombre": "Fecha", "width_ratio": 1.0},
+    {"id": "placa_origen", "nombre": "Placa", "width_ratio": 1.0},
+    {"id": "guia_origen", "nombre": "N° Guía", "width_ratio": 1.1},
+    {"id": "desc", "nombre": "Descripción", "width_ratio": 3.2},
+    {"id": "cant", "nombre": "Cantidad", "width_ratio": 0.9},
+    {"id": "um", "nombre": "Medida", "width_ratio": 0.9},
+    {"id": "peso", "nombre": "Peso (Kg)", "width_ratio": 1.0}
+]
 
 def mostrar_login_google():
     """Genera la URL OAuth puramente REST, sin librerías que obligen a PKCE"""
@@ -443,17 +453,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     df['um'] = df['um'].apply(lambda x: 'KG' if 'KILO' in str(x).upper() else 'GLN' if 'GALO' in str(x).upper() else 'UNID' if 'UNIDA' in str(x).upper() else str(x).upper())
                     df['desc'] = df['desc'].apply(limpiar_descripcion)
                     
-                    def forzar_limpieza_guia(guia_str):
-                        s = str(guia_str).strip()
-                        if '-' in s:
-                            partes = s.split('-', 1)
-                            prefijo = partes[0].strip()
-                            numeros = ''.join(filter(str.isdigit, partes[1]))
-                            if numeros:
-                                return f"{prefijo}-{int(numeros)}"
-                        return s
-                    
-                    df['guia_origen'] = df['guia_origen'].apply(forzar_limpieza_guia)
+                    df['guia_origen'] = df['guia_origen'].apply(limpiar_guia_o_factura)
                     df['fecha_origen'] = df['fecha_origen'].apply(normalizar_fecha)
 
                     def fecha_a_entero(fecha_str):
@@ -468,6 +468,17 @@ if modulo_actual == "📄 Generador de Certificados":
                     df = df.drop(columns=['_llave_orden']).reset_index(drop=True)
 
                     st.session_state['df_items'] = df
+                    
+                    # Sincronizar datos extraídos hacia los campos de cabecera en sesión
+                    st.session_state['form_guia'] = limpiar_guia_o_factura(df['guia_origen'].iloc[0] if not df.empty else grl.get('serie', ''))
+                    st.session_state['form_placa'] = df['placa_origen'].iloc[0] if not df.empty else grl.get('vehiculo', '')
+                    st.session_state['form_partida'] = formato_nompropio(grl.get('punto_partida', ''))
+                    st.session_state['form_dest'] = grl.get('destinatario', '')
+                    cli_ocr_tmp = grl.get('cliente') or grl.get('razon_social') or grl.get('empresa') or ""
+                    st.session_state['form_cli_ocr'] = str(cli_ocr_tmp).upper().strip()
+                    st.session_state['form_ruc_ocr'] = grl.get('ruc_cliente') or grl.get('ruc') or ""
+                    st.session_state.pop('form_corr', None)
+                    st.session_state.pop('form_fec_emis', None)
                     st.success(f"✅ Procesado, Limpiado y Ordenado: {len(items)} items de {total} archivos.")
                 else: st.error("❌ Falló: No se encontraron items.")
 
@@ -489,6 +500,16 @@ if modulo_actual == "📄 Generador de Certificados":
                 'guia_origen': '', 'placa_origen': ''
             }])
             st.session_state['df_items'] = df_vacio
+            st.session_state['form_guia'] = ''
+            st.session_state['form_placa'] = ''
+            st.session_state['form_partida'] = ''
+            st.session_state['form_partida_man'] = ''
+            st.session_state['form_dest'] = ''
+            st.session_state['form_cli_ocr'] = ''
+            st.session_state['form_ruc_ocr'] = ''
+            st.session_state['form_ruc_man'] = ''
+            st.session_state.pop('form_corr', None)
+            st.session_state.pop('form_fec_emis', None)
             st.rerun()
 
     # ====================================================================
@@ -545,7 +566,9 @@ if modulo_actual == "📄 Generador de Certificados":
             st.warning(f"⚠️ Aviso: No se pudo auto-calcular el correlativo ({e}). Se usará 001.")
             
         # Inyectamos el número calculado directamente en el input amarillo
-        v_corr = c1.text_input("Correlativo", value=siguiente_corr)
+        if 'form_corr' not in st.session_state or not st.session_state.get('form_corr'):
+            st.session_state['form_corr'] = siguiente_corr
+        v_corr = c1.text_input("Correlativo", value=st.session_state['form_corr'], key="form_corr")
         
         fecha_base = grl.get('fecha', datetime.now().strftime("%d/%m/%Y"))
         
@@ -562,7 +585,6 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.info("📅 COMERCIALIZACIÓN (FIN DE MES)")
                     f_calc = obtener_fin_de_mes(fecha_base)
                 tipo_op = "Comercialización"
-                v_fec_emis = st.text_input("F. Emisión", value=f_calc)
             else:
                 st.info("📅 DISPOSICIÓN FINAL +2")
                 try:
@@ -570,15 +592,33 @@ if modulo_actual == "📄 Generador de Certificados":
                 except ValueError:
                     f_calc = (datetime.now() + timedelta(days=2)).strftime("%d/%m/%Y")
                 tipo_op = "Disposición Final"
-                v_fec_emis = st.text_input("F. Emisión", value=f_calc)
+
+            if 'form_fec_emis' not in st.session_state or st.session_state.get('_tipo_flujo_calc') != tipo_flujo:
+                st.session_state['form_fec_emis'] = f_calc
+                st.session_state['_tipo_flujo_calc'] = tipo_flujo
+            v_fec_emis = st.text_input("F. Emisión", value=st.session_state['form_fec_emis'], key="form_fec_emis")
         
         # Extraemos la guía y placa LIMPIAS desde la tabla procesada
         guia_limpia = df_items['guia_origen'].iloc[0] if not df_items.empty else grl.get('serie', '')
+        guia_limpia = limpiar_guia_o_factura(guia_limpia)
         placa_limpia = df_items['placa_origen'].iloc[0] if not df_items.empty else grl.get('vehiculo', '')
         
+        if 'form_guia' not in st.session_state or not st.session_state.get('form_guia'):
+            st.session_state['form_guia'] = guia_limpia
+        if 'form_placa' not in st.session_state or not st.session_state.get('form_placa'):
+            st.session_state['form_placa'] = placa_limpia
+
+        val_guia_mostrada = st.session_state['form_guia'] if modo_manual else guia_limpia
+        val_placa_mostrada = st.session_state['form_placa'] if modo_manual else placa_limpia
+
         # Si estamos en manual, siguen desbloqueadas para escribir
-        v_guia = c3.text_input("Guía", guia_limpia, disabled=not modo_manual)
-        v_placa = c4.text_input("Placa", placa_limpia, disabled=not modo_manual)
+        v_guia_in = c3.text_input("Guía", value=val_guia_mostrada, disabled=not modo_manual, key="input_guia_txt")
+        v_guia = limpiar_guia_o_factura(v_guia_in)
+        if v_guia != v_guia_in:
+            st.session_state['form_guia'] = v_guia
+
+        v_placa = c4.text_input("Placa", value=val_placa_mostrada, disabled=not modo_manual, key="input_placa_txt")
+        st.session_state['form_placa'] = v_placa
 
         # --- Diagnóstico Temprano de Guía vs Placa ---
         estado_diag, msg_diag = verificar_consistencia_guia_placa(v_guia, v_placa)
@@ -601,6 +641,10 @@ if modulo_actual == "📄 Generador de Certificados":
                         ocr_sw['serie'] = ocr_sw.get('vehiculo', '')
                         ocr_sw['vehiculo'] = s_sw
                         st.session_state['ocr_data'] = ocr_sw
+                    # Sincronizar inputs de cabecera
+                    tmp_h_g = st.session_state.get('form_guia', '')
+                    st.session_state['form_guia'] = st.session_state.get('form_placa', '')
+                    st.session_state['form_placa'] = tmp_h_g
                     st.toast("✅ Valores de Guía y Placa intercambiados correctamente.")
                     st.rerun()
 
@@ -674,34 +718,126 @@ if modulo_actual == "📄 Generador de Certificados":
                 dir_autocompletada = mapa_fundo_dir[fundo_sel_man]
 
             val_partida_inicial = dir_autocompletada if dir_autocompletada else grl.get('punto_partida', '')
+            if 'form_partida_man' not in st.session_state or dir_autocompletada:
+                st.session_state['form_partida_man'] = formato_nompropio(val_partida_inicial)
             v_partida = st.text_input(
                 "Partida (Dirección)", 
-                value=formato_nompropio(val_partida_inicial),
+                value=st.session_state.get('form_partida_man', formato_nompropio(val_partida_inicial)),
                 key=f"input_partida_{empresa_sel_man}_{fundo_sel_man}"
             )
+            st.session_state['form_partida_man'] = v_partida
         else:
-            v_partida = st.text_input("Partida", formato_nompropio(grl.get('punto_partida', '')))
+            if 'form_partida' not in st.session_state or not st.session_state.get('form_partida'):
+                st.session_state['form_partida'] = formato_nompropio(grl.get('punto_partida', ''))
+            v_partida = st.text_input("Partida", value=st.session_state['form_partida'], key="input_partida_ocr")
+            st.session_state['form_partida'] = v_partida
         v_llegada = ""  # Dirección de llegada predeterminada en la plantilla
-        v_dest = st.text_input("Destinatario", grl.get('destinatario', ''))
+        
+        if 'form_dest' not in st.session_state:
+            st.session_state['form_dest'] = grl.get('destinatario', '')
+        v_dest = st.text_input("Destinatario", value=st.session_state['form_dest'], key="input_dest_txt")
+        st.session_state['form_dest'] = v_dest
+
+        # Inicializar configuración de columnas si no existe
+        if 'tabla_columnas_config' not in st.session_state:
+            st.session_state['tabla_columnas_config'] = [c.copy() for c in DEFAULT_COLUMNAS_CONFIG]
+
+        # Panel para Editar Encabezados y Eliminar Columnas
+        with st.expander("🛠️ Personalizar Encabezados y Columnas de la Tabla (Editar / Eliminar)", expanded=False):
+            st.markdown("💡 *Edita los nombres de los encabezados o elimina columnas. La tabla en pantalla y el Certificado Word se generarán únicamente con las columnas restantes y los nombres configurados.*")
+            
+            cols_activas = st.session_state['tabla_columnas_config']
+            col_a_borrar = None
+            
+            for idx_c, col_cfg in enumerate(cols_activas):
+                col_c1, col_c2, col_c3 = st.columns([1.5, 3, 1])
+                with col_c1:
+                    st.markdown(f"**Columna {idx_c + 1}:** `{col_cfg['id']}`")
+                with col_c2:
+                    nuevo_hdr = st.text_input(
+                        f"Encabezado para {col_cfg['id']}", 
+                        value=col_cfg['nombre'], 
+                        key=f"hdr_txt_{col_cfg['id']}",
+                        label_visibility="collapsed"
+                    )
+                    if nuevo_hdr != col_cfg['nombre']:
+                        col_cfg['nombre'] = nuevo_hdr
+                with col_c3:
+                    if st.button("🗑️ Eliminar", key=f"btn_del_col_{col_cfg['id']}", help=f"Eliminar la columna '{col_cfg['nombre']}' de la tabla"):
+                        col_a_borrar = col_cfg['id']
+
+            if col_a_borrar:
+                if len(cols_activas) <= 1:
+                    st.warning("⚠️ Debe conservar al menos una columna en la tabla.")
+                else:
+                    st.session_state['tabla_columnas_config'] = [c for c in cols_activas if c['id'] != col_a_borrar]
+                    st.toast("✅ Columna eliminada de la tabla.")
+                    st.rerun()
+
+            st.divider()
+            c_rest1, c_rest2 = st.columns([2, 1])
+            with c_rest1:
+                ids_activas = [c['id'] for c in st.session_state['tabla_columnas_config']]
+                cols_disponibles_restaurar = [c for c in DEFAULT_COLUMNAS_CONFIG if c['id'] not in ids_activas]
+                if cols_disponibles_restaurar:
+                    c_sel_r, c_btn_r = st.columns([3, 1])
+                    with c_sel_r:
+                        col_sel_res = st.selectbox(
+                            "Restaurar columna eliminada:",
+                            options=[c['id'] for c in cols_disponibles_restaurar],
+                            format_func=lambda cid: next(c['nombre'] for c in cols_disponibles_restaurar if c['id'] == cid),
+                            key="sel_col_restaurar"
+                        )
+                    with c_btn_r:
+                        st.write("")
+                        if st.button("➕ Restaurar", key="btn_ejecutar_restaurar"):
+                            item_res = next(c.copy() for c in DEFAULT_COLUMNAS_CONFIG if c['id'] == col_sel_res)
+                            st.session_state['tabla_columnas_config'].append(item_res)
+                            st.rerun()
+            with c_rest2:
+                if st.button("🔄 Restablecer Predeterminados", key="btn_reset_default_cols", help="Restaura las 7 columnas originales con sus nombres por defecto"):
+                    st.session_state['tabla_columnas_config'] = [c.copy() for c in DEFAULT_COLUMNAS_CONFIG]
+                    st.rerun()
+
+        cols_activas = st.session_state['tabla_columnas_config']
+        ids_activas = [c['id'] for c in cols_activas]
+        
+        # Asegurarse de que el DataFrame contenga las columnas activas
+        for cid in ids_activas:
+            if cid not in df_items.columns:
+                df_items[cid] = ""
+                
+        # Construir configuración de columnas con los encabezados personalizados
+        col_config_editor = {}
+        for c in cols_activas:
+            col_config_editor[c['id']] = st.column_config.TextColumn(c['nombre'])
+            
+        df_para_editor = df_items[ids_activas].copy()
 
         v_items_df = st.data_editor(
-            df_items,
+            df_para_editor,
             num_rows="dynamic",
             use_container_width=True,
-            column_config={
-                "peso": st.column_config.TextColumn("Peso (Kg)"),
-                "desc": st.column_config.TextColumn("Descripción"),
-                "cant": st.column_config.TextColumn("Cantidad"),
-                "um": st.column_config.TextColumn("Medida"),
-                "fecha_origen": st.column_config.TextColumn("Fecha"),
-                "guia_origen": st.column_config.TextColumn("N° Guía"),
-                "placa_origen": st.column_config.TextColumn("Placa")
-            }
+            column_config=col_config_editor,
+            key="v_items_df_editor"
         )
 
+        # Limpieza automática de guías y facturas en la tabla (ej: F004-0001402 -> F004-1402)
+        if 'guia_origen' in v_items_df.columns:
+            v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
+
         # Sincronizar memoria persistente si el usuario modificó o eliminó filas directamente en el editor
-        if not v_items_df.equals(st.session_state.get('df_items')):
-            st.session_state['df_items'] = v_items_df.copy()
+        if len(v_items_df) != len(df_items):
+            df_nuevo = v_items_df.copy()
+            for c_extra in df_items.columns:
+                if c_extra not in df_nuevo.columns:
+                    df_nuevo[c_extra] = ""
+            st.session_state['df_items'] = df_nuevo
+            df_items = df_nuevo
+        else:
+            for cid in ids_activas:
+                df_items[cid] = v_items_df[cid]
+            st.session_state['df_items'] = df_items
 
         # --- PANEL DE GESTIÓN Y ELIMINACIÓN DE FILAS ---
         if not v_items_df.empty:
@@ -878,19 +1014,28 @@ if modulo_actual == "📄 Generador de Certificados":
                             idx_default_cli = i_op
                             break
 
-                v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes, index=idx_default_cli)
+                v_cli = st.selectbox("Cliente (Desde Base de Datos)", options=opciones_clientes, index=idx_default_cli, key="sel_cli_manual")
                 
                 ruc_encontrado = diccionario_clientes.get(v_cli, "") if v_cli else ""
-                v_ruc_c = st.text_input("RUC Cliente", value=ruc_encontrado)
+                if 'form_ruc_man' not in st.session_state or ruc_encontrado:
+                    st.session_state['form_ruc_man'] = ruc_encontrado
+                v_ruc_c = st.text_input("RUC Cliente", value=st.session_state['form_ruc_man'], key="input_ruc_man")
+                st.session_state['form_ruc_man'] = v_ruc_c
             else:
                 from src.services.google_service import obtener_clientes_desde_sheets
                 diccionario_clientes = obtener_clientes_desde_sheets()
                 
-                v_cli = st.text_input("Cliente (Extraído)", value=cliente_ocr)
+                if 'form_cli_ocr' not in st.session_state or not st.session_state.get('form_cli_ocr'):
+                    st.session_state['form_cli_ocr'] = cliente_ocr
+                v_cli = st.text_input("Cliente (Extraído)", value=st.session_state['form_cli_ocr'], key="input_cli_ocr")
+                st.session_state['form_cli_ocr'] = v_cli
                 
                 # Autocompletado robusto: Si hace match con BD, usa su RUC. Si no, usa el extraído crudo de IA
                 ruc_calculado = diccionario_clientes.get(str(v_cli).strip().upper(), ruc_crudo)
-                v_ruc_c = st.text_input("RUC Cliente", value=ruc_calculado)
+                if 'form_ruc_ocr' not in st.session_state or not st.session_state.get('form_ruc_ocr'):
+                    st.session_state['form_ruc_ocr'] = ruc_calculado
+                v_ruc_c = st.text_input("RUC Cliente", value=st.session_state['form_ruc_ocr'], key="input_ruc_ocr")
+                st.session_state['form_ruc_ocr'] = v_ruc_c
             
             v_serv = st.selectbox(
                 "Servicio", 
@@ -972,9 +1117,12 @@ if modulo_actual == "📄 Generador de Certificados":
         # Propagar la guía y placa ingresadas manualmente hacia la tabla para su registro
         if modo_manual:
             if 'guia_origen' in v_items_df.columns:
-                v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(lambda x: v_guia if str(x).strip() in ['', 'None', 'nan'] else x)
+                v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(lambda x: v_guia if str(x).strip() in ['', 'None', 'nan'] else limpiar_guia_o_factura(x))
             if 'placa_origen' in v_items_df.columns:
                 v_items_df['placa_origen'] = v_items_df['placa_origen'].apply(lambda x: v_placa if str(x).strip() in ['', 'None', 'nan'] else x)
+        else:
+            if 'guia_origen' in v_items_df.columns:
+                v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
         # --- FIX ORDENAMIENTO GLOBAL ANTES DE GENERAR ---
         if 'fecha_origen' in v_items_df.columns:
             def fecha_a_entero_gen(fecha_str):
@@ -1109,7 +1257,11 @@ if modulo_actual == "📄 Generador de Certificados":
                                 doc.render(ctx)
                                 buf_tpl = io.BytesIO()
                                 doc.save(buf_tpl)
-                                final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), df_filtrado.to_dict('records'))
+                                final_bytes = inyectar_tabla_en_docx(
+                                    io.BytesIO(buf_tpl.getvalue()), 
+                                    df_filtrado.to_dict('records'),
+                                    columnas_config=st.session_state.get('tabla_columnas_config')
+                                )
                                 
                                 tipo_cod = "COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER"
                                 
@@ -1229,7 +1381,11 @@ if modulo_actual == "📄 Generador de Certificados":
                     doc.save(buf_tpl)
                     
                     items_para_tabla = v_items_df.to_dict('records')
-                    final_bytes = inyectar_tabla_en_docx(io.BytesIO(buf_tpl.getvalue()), items_para_tabla)
+                    final_bytes = inyectar_tabla_en_docx(
+                        io.BytesIO(buf_tpl.getvalue()), 
+                        items_para_tabla,
+                        columnas_config=st.session_state.get('tabla_columnas_config')
+                    )
 
 
                     

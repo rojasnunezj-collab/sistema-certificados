@@ -65,37 +65,50 @@ def normalizar_fecha(fecha_str):
         except: continue
     return fecha_str 
 
+def limpiar_guia_o_factura(valor):
+    """
+    Limpia y normaliza números de guías de remisión y facturas eliminando
+    ceros a la izquierda en el correlativo.
+    Ejemplo:
+      - 'F004-0001402' -> 'F004-1402'
+      - 'f004-0001402' -> 'F004-1402'
+      - 'F004 - 0001402' -> 'F004-1402'
+      - 'F004-0001402, F004-0001403' -> 'F004-1402, F004-1403'
+      - 'T001-0000045 / E001-0000120' -> 'T001-45 / E001-120'
+      - '001-0001402' -> '001-1402'
+    """
+    if valor is None:
+        return ""
+    s = str(valor).strip()
+    if not s or s.upper() in ['NAN', 'NONE', 'S/N', 'SIN DATOS', '']:
+        return s
+
+    def _limpiar_token(match):
+        prefijo = match.group(1).upper()
+        num_str = match.group(2)
+        num_limpio = num_str.lstrip('0') or '0'
+        return f"{prefijo}-{num_limpio}"
+
+    res = re.sub(r'\b([A-Za-z0-9]{1,8})\s*-\s*(\d+)\b', _limpiar_token, s)
+    return res
+
 def formatear_guia(serie_str):
-    if not serie_str or '-' not in str(serie_str): return serie_str
-    try:
-        p = str(serie_str).split('-')
-        if len(p) == 2: return f"{p[0].strip()}-{str(int(p[1].strip()))}"
-    except: pass
-    return serie_str
+    return limpiar_guia_o_factura(serie_str)
 
 
 # ====================================================================
 # --- BLOQUE 3: Detección y Validación de Placa vs Guía ---
 # ====================================================================
-def es_formato_guia(valor):
-    """
-    Determina si un texto corresponde al patrón característico de una Guía de Remisión (SUNAT).
-    Ejemplos típicos:
-      - GRE: T001-00012345, EG01-1234, T002-1, E001-12, V001-123, GR01-456
-      - Físicas: 001-0012345, 0001-1234, 002-123456
-    """
-    if not valor:
+def _es_un_formato_guia_token(token):
+    s = str(token).strip().upper()
+    if not s or s in ['NONE', 'NAN', 'S/N', 'SIN DATOS']:
         return False
-    s = str(valor).strip().upper()
-    if s in ['', 'NONE', 'NAN', 'S/N', 'SIN DATOS']:
-        return False
-
     if '-' in s:
         partes = s.split('-', 1)
         serie = partes[0].strip()
         correlativo = partes[1].strip()
 
-        # Series típicas de Guía Electrónica (GRE)
+        # Series típicas de Guía Electrónica (GRE) y Facturas (F001, E001, etc.)
         if re.match(r'^(T\d{2,3}|EG\d{2}|E\d{3}|V\d{3}|GR\d{2}|[A-Z]\d{3})$', serie) and correlativo.isdigit():
             return True
 
@@ -103,11 +116,34 @@ def es_formato_guia(valor):
         if re.match(r'^\d{3,4}$', serie) and correlativo.isdigit():
             return True
 
-        # Series alfanuméricas con correlativo numérico extendido
-        if re.match(r'^[A-Z0-9]{3,4}$', serie) and correlativo.isdigit() and len(correlativo) >= 4:
+        # Series alfanuméricas con correlativo numérico
+        if re.match(r'^[A-Z0-9]{3,4}$', serie) and correlativo.isdigit():
             return True
-
     return False
+
+def es_formato_guia(valor):
+    """
+    Determina si un texto corresponde al patrón característico de una Guía de Remisión o Factura (SUNAT).
+    Ejemplos típicos:
+      - GRE / Facturas: F004-1402, F004-0001402, T001-00012345, EG01-1234, T002-1, E001-12, V001-123, GR01-456
+      - Físicas: 001-0012345, 0001-1234, 002-123456
+      - Listas: F004-1402, F004-1403
+    """
+    if not valor:
+        return False
+    s = str(valor).strip().upper()
+    if s in ['', 'NONE', 'NAN', 'S/N', 'SIN DATOS']:
+        return False
+
+    # Si contiene múltiples guías separadas por comas, barras o punto y coma
+    separadores = [',', ';', '/', ' Y ']
+    for sep in separadores:
+        if sep in s:
+            tokens = [t.strip() for t in s.replace(sep, ',').split(',') if t.strip()]
+            if tokens and any(_es_un_formato_guia_token(t) for t in tokens):
+                return True
+
+    return _es_un_formato_guia_token(s)
 
 
 def es_formato_placa(valor):
