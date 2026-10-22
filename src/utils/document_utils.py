@@ -3,8 +3,8 @@
 # ====================================================================
 import io
 from docx import Document
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.table import WD_ALIGN_VERTICAL
+from docx.shared import Inches, Pt, RGBColor, Length
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml import OxmlElement, parse_xml
 from docx.oxml.ns import qn
@@ -285,10 +285,37 @@ def inyectar_tabla_en_docx(doc_io, data_items, columnas_config=None):
             
         table.autofit = False
         table.allow_autofit = False
+        table.alignment = WD_TABLE_ALIGNMENT.LEFT
         set_table_margins(table, top=72, bottom=72, left=30, right=30)
 
-        # Cálculo dinámico proporcional de anchos para ocupar ~7.0 pulgadas
-        ANCHO_TOTAL_DISPONIBLE = 7.0
+        # Cálculo dinámico proporcional de anchos ocupando el 100% del ancho utilizable entre márgenes
+        try:
+            sec = doc.sections[0]
+            usable_len = Length(sec.page_width - sec.left_margin - sec.right_margin)
+            ancho_usable_inches = usable_len.inches
+            ancho_usable_dxa = int(usable_len.pt * 20)
+        except Exception:
+            ancho_usable_inches = 7.481
+            ancho_usable_dxa = 10772
+
+        # Configurar explícitamente en el XML del tblPr:
+        # 1. w:tblInd a 0 dxa para que el margen izquierdo quede perfectamente alineado con los párrafos
+        # 2. w:tblW en dxa coincidente con el ancho total disponible entre márgenes
+        tblPr = table._tbl.tblPr
+        for child in tblPr.findall(qn('w:tblInd')):
+            tblPr.remove(child)
+        tblInd = OxmlElement('w:tblInd')
+        tblInd.set(qn('w:w'), '0')
+        tblInd.set(qn('w:type'), 'dxa')
+        tblPr.append(tblInd)
+
+        for child in tblPr.findall(qn('w:tblW')):
+            tblPr.remove(child)
+        tblW = OxmlElement('w:tblW')
+        tblW.set(qn('w:w'), str(ancho_usable_dxa))
+        tblW.set(qn('w:type'), 'dxa')
+        tblPr.append(tblW)
+
         ratios = []
         for c in cols_activas:
             r = c.get('width_ratio')
@@ -303,7 +330,7 @@ def inyectar_tabla_en_docx(doc_io, data_items, columnas_config=None):
             ratios.append(float(r))
             
         total_ratios = sum(ratios) if sum(ratios) > 0 else float(num_cols)
-        widths = [Inches((r / total_ratios) * ANCHO_TOTAL_DISPONIBLE) for r in ratios]
+        widths = [Inches((r / total_ratios) * ancho_usable_inches) for r in ratios]
         
         for i, col in enumerate(table.columns):
             col.width = widths[i]
