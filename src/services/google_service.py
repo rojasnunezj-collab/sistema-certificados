@@ -37,8 +37,8 @@ def obtener_servicios():
     creds = None
     
     # 0. Intentar cargar User Credentials (token.json) desde Streamlit Secrets (¡Prioridad Máxima anti-cuota!)
-    if "token" in st.secrets:
-        try:
+    try:
+        if "token" in st.secrets:
             tinfo = dict(st.secrets["token"])
             from google.oauth2.credentials import Credentials
             creds = Credentials(
@@ -49,34 +49,44 @@ def obtener_servicios():
                 client_secret=tinfo.get('client_secret'),
                 scopes=scopes
             )
-        except Exception as e:
-            st.error(f"Error cargando el token OAuth desde st.secrets: {e}")
+    except Exception:
+        pass
 
     # 1. Intentar cargar cuenta de servicio desde Streamlit Secrets (NUBE) - ¡Prioridad #2!
-    if not creds and "google" in st.secrets:
-        try:
+    try:
+        if not creds and "google" in st.secrets:
             info = dict(st.secrets["google"])
             # Auto-corrección de formato por si acaso
             for k, v in info.items():
                 if isinstance(v, str):
                     info[k] = v.replace("https=//", "https://")
             creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
-        except Exception as e:
-            st.error(f"Error cargando credenciales de cuenta de servicio desde secrets: {e}")
+    except Exception:
+        pass
 
     # 2. Si no hay secrets, intentar cargar archivos locales (PC) - Prioridad local
     if not creds:
+        base_app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
         # Primero buscar token.json local (prioridad local anti-cuota)
-        if os.path.exists("token.json"):
+        token_candidates = ["token.json", os.path.join(base_app_dir, "token.json")]
+        token_file = next((p for p in token_candidates if os.path.exists(p)), None)
+        if token_file:
             try:
                 from google.oauth2.credentials import Credentials
-                creds = Credentials.from_authorized_user_file("token.json", scopes)
+                creds = Credentials.from_authorized_user_file(token_file, scopes)
             except Exception as e:
-                st.warning(f"No se pudo cargar token.json local: {e}")
+                st.warning(f"No se pudo cargar token.json ({token_file}): {e}")
         
         # Si no hay token.json, probar con las service accounts locales
         if not creds:
-            cred_file = next((p for p in ["secretoslocal.json", "secretos_local.json", "secretos.json"] if os.path.exists(p)), None)
+            posibles_cred = [
+                "secretoslocal.json", "secretos_local.json", "secretos.json", "credenciales_gcp.json",
+                os.path.join(base_app_dir, "secretoslocal.json"),
+                os.path.join(base_app_dir, "secretos.json"),
+                os.path.join(base_app_dir, "credenciales_gcp.json")
+            ]
+            cred_file = next((p for p in posibles_cred if os.path.exists(p)), None)
             if cred_file:
                 try:
                     creds = service_account.Credentials.from_service_account_file(cred_file, scopes=scopes)

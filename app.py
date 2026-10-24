@@ -37,6 +37,7 @@ from src.utils.format_utils import (
 from docxtpl import DocxTemplate
 import urllib.parse
 import requests
+import secrets
 
 DEFAULT_COLUMNAS_CONFIG = [
     {"id": "fecha_origen", "nombre": "Fecha", "width_ratio": 1.0},
@@ -48,19 +49,27 @@ DEFAULT_COLUMNAS_CONFIG = [
     {"id": "peso", "nombre": "Peso (Kg)", "width_ratio": 1.0}
 ]
 
+# --- Configuración Inicial Streamlit (Debe ser el primer comando de Streamlit ejecutado)
+st.set_page_config(page_title="Certificador AI V2", layout="wide")
+
 def mostrar_login_google():
-    """Genera la URL OAuth puramente REST, sin librerías que obligen a PKCE"""
+    """Genera la URL OAuth puramente REST con validación de estado anti-CSRF."""
     client_id = str(st.secrets["gcp_oauth"]["client_id"]).strip()
     redirect_uri = str(st.secrets["gcp_oauth"]["redirect_uri"]).strip()
     
-    # Construimos el auth URL limpio
+    # Generar token anti-CSRF persistido en sesión
+    if 'oauth_state' not in st.session_state:
+        st.session_state['oauth_state'] = secrets.token_urlsafe(32)
+    
+    # Construimos el auth URL limpio con parámetro state
     params = {
         "client_id": client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
         "prompt": "consent",
-        "access_type": "offline"
+        "access_type": "offline",
+        "state": st.session_state['oauth_state']
     }
     
     auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urllib.parse.urlencode(params)
@@ -78,9 +87,19 @@ def mostrar_login_google():
     st.stop()
 
 def verificar_retorno_oauth():
-    """Atrapa el callback ?code= e invoca un POST explícito, sorteando librerías problemáticas."""
+    """Atrapa el callback ?code= e invoca un POST explícito, validando token de estado anti-CSRF."""
     if 'code' in st.query_params:
         try:
+            # 1. Validación de seguridad Anti-CSRF
+            returned_state = st.query_params.get('state')
+            if isinstance(returned_state, list): returned_state = returned_state[0]
+            expected_state = st.session_state.get('oauth_state')
+            
+            if expected_state and returned_state != expected_state:
+                st.error("⛔ Violación de seguridad: Parámetro 'state' de OAuth no coincide (posible ataque CSRF).")
+                st.query_params.clear()
+                st.stop()
+
             code = st.query_params['code']
             if isinstance(code, list): code = code[0]
                 
@@ -93,7 +112,7 @@ def verificar_retorno_oauth():
                 "redirect_uri": str(st.secrets["gcp_oauth"]["redirect_uri"]).strip(),
                 "grant_type": "authorization_code"
             }
-            res = requests.post(token_url, data=data).json()
+            res = requests.post(token_url, data=data, timeout=15).json()
             
             if "error" in res:
                 st.error(f"Rechazo en Fase Token: {res.get('error_description', res['error'])}")
@@ -104,36 +123,19 @@ def verificar_retorno_oauth():
             # Recuperar perfil de Usuario
             usr_resp = requests.get(
                 "https://www.googleapis.com/oauth2/v1/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10
             ).json()
             
             st.session_state['usuario_email'] = usr_resp.get('email', '').strip().lower()
             
-            # Limpiar la URL y forzar login
+            # Limpiar estado de seguridad y parámetros de query para evitar reutilizaciones
+            st.session_state.pop('oauth_state', None)
             st.query_params.clear()
             st.rerun()
         except Exception as e:
             st.error(f"Falla crítica procesando autenticación REST: {e}")
             st.stop()
-
-# --- CARGA DE BASES DE DATOS (REPOS) ---
-# Esto garantiza que 'repo' exista siempre en toda la App
-if 'repo' not in st.session_state:
-    with st.spinner("Conectando con bases de datos de Google..."):
-        st.session_state.repo = {
-            "emisores": leer_sheet_seguro("EMPRESAS"),
-            "clientes": leer_sheet_seguro("CLIENTES"),
-            "servicios": leer_sheet_seguro("SERVICIOS"),
-            "direcciones": leer_sheet_seguro("Direcciones")
-        }
-elif "direcciones" not in st.session_state.repo:
-    st.session_state.repo["direcciones"] = leer_sheet_seguro("Direcciones")
-
-# Definimos la variable 'repo' global para el resto del código
-repo = st.session_state.repo
-
-# --- Configuración Inicial
-st.set_page_config(page_title="Certificador AI V2", layout="wide")
 
 if 'metricas_exitosos' not in st.session_state:
     st.session_state['metricas_exitosos'] = 0
@@ -165,13 +167,31 @@ if correo_actual not in bd_usuarios or bd_usuarios[correo_actual].get('Estado', 
     st.error(f"⛔ Acceso denegado: El usuario '{correo_actual}' no cuenta con un rol Asignado o está inactivo.")
     st.stop()
 
-# 5. Adquisición Exitosas: Inyectar el Rol en el hilo continuo
+# 5. Adquisición Exitosa: Inyectar el Rol en el hilo continuo
 st.session_state['usuario_rol'] = bd_usuarios[correo_actual].get('Rol', 'User')
 st.session_state['usuario_nombre'] = bd_usuarios[correo_actual].get('Nombre', correo_actual)
 
 with st.sidebar:
     st.info(f"👤 Conectado como: **{st.session_state['usuario_nombre']}**")
     st.divider()
+
+# ====================================================================
+# --- CARGA DE BASES DE DATOS (REPOS) PROTEGIDA TRAS AUTENTICACIÓN ---
+# ====================================================================
+# Se ejecuta ÚNICAMENTE después de validar que el usuario está autenticado y activo
+if 'repo' not in st.session_state:
+    with st.spinner("Conectando con bases de datos de Google..."):
+        st.session_state.repo = {
+            "emisores": leer_sheet_seguro("EMPRESAS"),
+            "clientes": leer_sheet_seguro("CLIENTES"),
+            "servicios": leer_sheet_seguro("SERVICIOS"),
+            "direcciones": leer_sheet_seguro("Direcciones")
+        }
+elif "direcciones" not in st.session_state.repo:
+    st.session_state.repo["direcciones"] = leer_sheet_seguro("Direcciones")
+
+# Definimos la variable 'repo' global para el resto del código
+repo = st.session_state.repo
 
 if 'datos_extraidos' not in st.session_state:
     st.session_state.datos_extraidos = None
@@ -1377,6 +1397,30 @@ if modulo_actual == "📄 Generador de Certificados":
                                 datos_log = [fecha_registro, str(v_cli).strip().upper(), destino_final, corr_str, val_cert, str(archivo).upper(), "", link_final, "", ""]
                                 registrar_en_control(datos_log)
                                 
+                                # --- MIGRACIÓN DIRECTA A SIGERSOL ---
+                                try:
+                                    from src.services.sigersol_service import migrar_datos_certificado_a_sigersol
+                                    cab_sig = {
+                                        "fecha": v_fec_emis,
+                                        "cliente": v_cli,
+                                        "ruc_cliente": v_ruc_c,
+                                        "partida": str(df_filtrado['ocr_partida'].iloc[0]) if 'ocr_partida' in df_filtrado.columns and str(df_filtrado['ocr_partida'].iloc[0]).strip() else v_partida,
+                                        "guia": str(archivo).upper(),
+                                        "placa": v_placa,
+                                        "tipo_residuo": v_res,
+                                        "correlativo": corr_str
+                                    }
+                                    emisor_sig = {
+                                        "nombre": emisor_nombre,
+                                        "ruc": emisor_ruc,
+                                        "registro": emisor_reg
+                                    }
+                                    res_sig = migrar_datos_certificado_a_sigersol(df_filtrado, cab_sig, tipo_flujo, emisor_sig)
+                                    if res_sig.get('ok'):
+                                        st.toast(f"✅ Sigersol: {res_sig.get('filas_insertadas')} filas migradas ({res_sig.get('pestana')})")
+                                except Exception as e_sig:
+                                    print(f"Aviso migración Sigersol individual: {e_sig}")
+                                
                                 corr_actual_int += 1
                                 exitosos.append(nombre_archivo_final)
                                 st.session_state['metricas_exitosos'] += 1
@@ -1504,6 +1548,34 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.session_state['msg_generado'] = True
                     st.session_state['msg_descargado'] = False
                     
+                    # --- MIGRACIÓN AUTOMÁTICA A SIGERSOL ---
+                    try:
+                        from src.services.sigersol_service import migrar_datos_certificado_a_sigersol
+                        cab_sig = {
+                            "fecha": v_fec_emis,
+                            "cliente": v_cli,
+                            "ruc_cliente": v_ruc_c,
+                            "partida": v_partida,
+                            "guia": v_guia,
+                            "placa": v_placa,
+                            "tipo_residuo": v_res,
+                            "correlativo": v_corr
+                        }
+                        emisor_sig = {
+                            "nombre": emisor_nombre,
+                            "ruc": emisor_ruc,
+                            "registro": emisor_reg
+                        }
+                        res_sig = migrar_datos_certificado_a_sigersol(
+                            df_items=v_items_df,
+                            cabecera=cab_sig,
+                            tipo_flujo=tipo_flujo,
+                            emisor_info=emisor_sig
+                        )
+                        st.session_state['res_migracion_sigersol'] = res_sig
+                    except Exception as e_sig:
+                        st.session_state['res_migracion_sigersol'] = {"ok": False, "error": str(e_sig)}
+                    
                     st.balloons()
                     st.rerun()
 
@@ -1515,6 +1587,13 @@ if modulo_actual == "📄 Generador de Certificados":
     if st.session_state.get('generado'):
         if st.session_state.get('msg_generado'):
             st.success("Certificado generado exitosamente en memoria.")
+            
+        res_sig = st.session_state.get('res_migracion_sigersol')
+        if res_sig:
+            if res_sig.get('ok'):
+                st.success(f"🌐 **SIGERSOL:** Se migraron {res_sig.get('filas_insertadas', 0)} registros a la pestaña **`{res_sig.get('pestana', '')}`** en el documento *3 trimestre*.")
+            else:
+                st.warning(f"⚠️ **SIGERSOL (Aviso):** No se pudo migrar automáticamente a Sigersol ({res_sig.get('error', 'Desconocido')}).")
             
         nombre_safe = st.session_state.get('nombre_generado', 'Certificado')
         

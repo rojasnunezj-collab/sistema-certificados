@@ -1,10 +1,23 @@
-streamlit
+# Core application
+streamlit>=1.56.0
 pandas
+
+# Security Patched Networking & Crypto (Mitigates eMudhra & TLS CVEs)
+certifi>=2026.10.23
+urllib3>=2.8.0
+cryptography>=46.0.7
+tornado>=6.5.9
+anyio>=4.14.2
+pillow>=12.3.0,<13
+
+# Google APIs & AI Services
 google-api-python-client
 google-auth
 google-auth-httplib2
 google-auth-oauthlib
 google-genai
+
+# Document Processing & Utilities
 docxtpl
 python-docx
 python-dotenv

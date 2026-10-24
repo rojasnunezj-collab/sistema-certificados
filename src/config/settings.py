@@ -13,6 +13,7 @@ load_dotenv()
 # Google IDs
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
+ID_SHEET_SIGERSOL = os.getenv("ID_SHEET_SIGERSOL", "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
 
 CARPETAS_DESTINO = {
     "EPMI S.A.C.": {
@@ -59,7 +60,10 @@ if os.path.exists("secretos.json"):
                 GCP_PROJECT = secretos_data["project_id"]
     except: pass
 
-if not GCP_PROJECT and "gcp_service_account" in st.secrets:
-    GCP_PROJECT = st.secrets["gcp_service_account"].get("project_id")
+try:
+    if not GCP_PROJECT and "gcp_service_account" in st.secrets:
+        GCP_PROJECT = st.secrets["gcp_service_account"].get("project_id")
+except Exception:
+    pass
 
 GCP_LOCATION = os.getenv("GCP_LOCATION", "us-central1")

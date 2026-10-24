@@ -3,14 +3,14 @@ import pandas as pd
 from datetime import datetime
 from googleapiclient.discovery import build
 
-from src.config.settings import ID_SHEET_CONTROL
+from src.config.settings import ID_SHEET_CONTROL, ID_SHEET_SIGERSOL
 from src.services.google_service import obtener_servicios, descargar_guias_drive
 from src.services.vertex_service import procesar_guia_ia_vertex_sigersol
 from src.utils.format_utils import limpiar_monto, formato_inteligente, limpiar_guia_o_factura
 import time
 
-# ID del destino dado en el prompt
-ID_DESTINO_SUNAT = "1xlgN2b6uRfEauguF1fYVGeo7DH6igcvJwl9uEKzu2ZU"
+# ID del destino oficial de Sigersol (3 trimestre)
+ID_DESTINO_SUNAT = ID_SHEET_SIGERSOL
 
 def leer_registro_guias():
     _, sheets = obtener_servicios()
