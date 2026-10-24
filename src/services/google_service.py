@@ -107,12 +107,31 @@ def obtener_servicios():
 # ====================================================================
 # --- BLOQUE 3: Funciones de Escritura y Subida (Sheets y Drive) ---
 # ====================================================================
-def registrar_en_control(datos_fila):
+def registrar_en_control(datos_fila, hoja_destino="Historial"):
     _, sheets = obtener_servicios()
     if not sheets: return False
     try:
+        # Asegurar dinámicamente que la pestaña de historial exista
+        try:
+            meta = sheets.spreadsheets().get(spreadsheetId=ID_SHEET_CONTROL).execute()
+            existing_titles = [s['properties']['title'] for s in meta.get('sheets', [])]
+            if hoja_destino not in existing_titles:
+                sheets.spreadsheets().batchUpdate(
+                    spreadsheetId=ID_SHEET_CONTROL,
+                    body={'requests': [{'addSheet': {'properties': {'title': hoja_destino}}}]}
+                ).execute()
+                headers = [['Fecha de emision', 'Empresa', 'Fundo', 'Correlativo', 'Certificado', 'Guia', 'Link Guia', 'Link Documento', 'Link pdf', 'Observaciones', 'Mes']]
+                sheets.spreadsheets().values().update(
+                    spreadsheetId=ID_SHEET_CONTROL,
+                    range=f"'{hoja_destino}'!A1:K1",
+                    valueInputOption='USER_ENTERED',
+                    body={'values': headers}
+                ).execute()
+        except Exception as e_sheet:
+            print(f"Aviso comprobando pestaña {hoja_destino}: {e_sheet}")
+
         res = sheets.spreadsheets().values().append(
-            spreadsheetId=ID_SHEET_CONTROL, range="'historial'!A:J",
+            spreadsheetId=ID_SHEET_CONTROL, range=f"'{hoja_destino}'!A:J",
             valueInputOption="USER_ENTERED", 
             insertDataOption="INSERT_ROWS",
             body={"values": [datos_fila]}
@@ -247,19 +266,24 @@ def subir_modelo_a_drive(nombre_archivo, contenido_bytes, drive_service):
 @st.cache_data(ttl=600)
 def obtener_mapa_plantillas_drive(es_modelo=False):
     """Escanea Drive y mapea según el modo seleccionado (Normal o Modelo)."""
+    # En modo normal, usamos la configuración dinámica de la pestaña EMPRESAS del Sheet
+    if not es_modelo:
+        cfgs = obtener_configuracion_empresas()
+        if cfgs:
+            mapa_dinamico = {}
+            for emp, cfg in cfgs.items():
+                mapa_dinamico[emp] = cfg.get("servicios", ["Comercialización", "Disposición Final 1", "Disposición Final 2"])
+            return mapa_dinamico
+
     from src.services.google_service import obtener_servicios
     drive_service, _ = obtener_servicios()
     
     if not drive_service: 
         return {"EPMI S.A.C.": ["Comercialización", "Disposición Final"]}
     
-    # --- EL INTERRUPTOR DE CARPETAS ---
-    if es_modelo:
-        ID_CARPETA = '1_kY1h6PwlhDPl8BjG7u0fbGMT1AWyn3n' # Carpeta de MODELOS
-        modo_texto = "MODO MODELO"
-    else:
-        ID_CARPETA = '1EwbYAbyv2uMsSn0yXZd0vTPuCoPMbzKs' # Carpeta de NORMALES
-        modo_texto = "MODO NORMAL"
+    # --- EL INTERRUPTOR DE CARPETAS (Modo Modelo) ---
+    ID_CARPETA = '1_kY1h6PwlhDPl8BjG7u0fbGMT1AWyn3n' # Carpeta de MODELOS
+    modo_texto = "MODO MODELO"
     
     query = f"'{ID_CARPETA}' in parents and trashed = false"
     
@@ -277,20 +301,11 @@ def obtener_mapa_plantillas_drive(es_modelo=False):
 
             print(f"-> Analizando: {nombre_raw}")
 
-            # --- LÓGICA DE EMPRESA SEGÚN EL MODO ---
-            if es_modelo:
-                # En modo modelo, no importa el nombre, la categoría es "MODELO"
-                empresa = "MODELO"
-            else:
-                # En modo normal, buscamos la empresa real
-                if "INECOVE" in nombre_raw: empresa = "INECOVE"
-                elif "BETA" in nombre_raw: empresa = "BETA"
-                else: empresa = "EPMI S.A.C."
+            empresa = "MODELO"
             
             if empresa not in mapa:
                 mapa[empresa] = []
             
-            # DETECCIÓN DE SERVICIO (Igual que antes)
             if "COMERCIALIZACION" in nombre_raw or "COMERCIALIZACIÓN" in nombre_raw:
                 mapa[empresa].append("Comercialización")
             if "FINAL" in nombre_raw:
@@ -341,36 +356,142 @@ def obtener_clientes_desde_sheets():
         st.error(f"🚨 Error real leyendo el Excel: {e}") 
         return {}
 
+@st.cache_data(ttl=300)
+def obtener_configuracion_empresas():
+    """
+    Lee dinámicamente la pestaña 'EMPRESAS' del Excel configurador.
+    Extrae para cada empresa: RUC, Registro MINAM, Hoja de Historial independiente,
+    Carpetas de Destino (CARPETA_...) y Plantillas (PLANTILLA_...).
+    Permite agregar nuevas empresas y carpetas directamente desde el Sheet sin tocar código.
+    """
+    from src.config.settings import PLANTILLAS, CARPETAS_DESTINO
+    from src.services.google_service import leer_sheet_seguro, extraer_id_drive
+
+    config_empresas = {}
+    try:
+        df = leer_sheet_seguro("EMPRESAS")
+        if df.empty:
+            for emp_nombre in PLANTILLAS.keys():
+                config_empresas[emp_nombre] = {
+                    "nombre": emp_nombre,
+                    "ruc": "",
+                    "reg": "",
+                    "hoja_historial": "Historial",
+                    "carpetas": CARPETAS_DESTINO.get(emp_nombre, {}),
+                    "plantillas": PLANTILLAS.get(emp_nombre, {}),
+                    "servicios": list(PLANTILLAS.get(emp_nombre, {}).keys())
+                }
+            return config_empresas
+
+        for _, row in df.iterrows():
+            emp_nombre = str(row.get('EMPRESA', '')).strip()
+            if not emp_nombre or emp_nombre.lower() == 'nan':
+                continue
+            ruc = str(row.get('RUC', '')).strip() if str(row.get('RUC', '')).strip().lower() != 'nan' else ""
+            reg = str(row.get('REGISTRO', '')).strip() if str(row.get('REGISTRO', '')).strip().lower() != 'nan' else ""
+            hoja_hist = str(row.get('HOJA_HISTORIAL', '')).strip()
+            if not hoja_hist or hoja_hist.lower() == 'nan':
+                emp_clean_token = emp_nombre.replace(" S.A.C.", "").replace(" SAC", "").replace(".", "").strip().split()[0]
+                hoja_hist = f"Historial_{emp_clean_token}" if "EPMI" not in emp_nombre.upper() else "Historial"
+
+            carpetas = {}
+            plantillas = {}
+
+            for col in df.columns:
+                col_clean = str(col).strip().upper()
+                val = str(row.get(col, '')).strip()
+                if not val or val.lower() == 'nan':
+                    continue
+                clean_id = extraer_id_drive(val)
+                if col_clean.startswith('CARPETA_'):
+                    op_key = col_clean.replace('CARPETA_', '')
+                    if 'COMERCIALIZACI' in op_key:
+                        carpetas['Comercialización'] = clean_id
+                    elif 'FINAL_1' in op_key:
+                        carpetas['Disposición Final 1'] = clean_id
+                    elif 'FINAL_2' in op_key:
+                        carpetas['Disposición Final 2'] = clean_id
+                    elif 'FINAL' in op_key:
+                        carpetas['Disposición Final 1'] = clean_id
+                        carpetas['Disposición Final 2'] = clean_id
+                    else:
+                        carpetas[op_key.capitalize()] = clean_id
+                elif col_clean.startswith('PLANTILLA_'):
+                    op_key = col_clean.replace('PLANTILLA_', '')
+                    if 'COMERCIALIZACI' in op_key:
+                        plantillas['Comercialización'] = clean_id
+                    elif 'FINAL_1' in op_key:
+                        plantillas['Disposición Final 1'] = clean_id
+                    elif 'FINAL_2' in op_key:
+                        plantillas['Disposición Final 2'] = clean_id
+                    elif 'FINAL' in op_key:
+                        plantillas['Disposición Final 1'] = clean_id
+                        plantillas['Disposición Final 2'] = clean_id
+                    else:
+                        plantillas[op_key.capitalize()] = clean_id
+
+            # Fallbacks desde settings.py si faltara alguna clave
+            if emp_nombre in CARPETAS_DESTINO:
+                for k, v in CARPETAS_DESTINO[emp_nombre].items():
+                    if k not in carpetas: carpetas[k] = v
+            if emp_nombre in PLANTILLAS:
+                for k, v in PLANTILLAS[emp_nombre].items():
+                    if k not in plantillas: plantillas[k] = v
+
+            servicios = sorted(list(set(list(carpetas.keys()) + list(plantillas.keys()))))
+            if not servicios:
+                servicios = ['Comercialización', 'Disposición Final 1', 'Disposición Final 2']
+
+            config_empresas[emp_nombre] = {
+                'nombre': emp_nombre,
+                'ruc': ruc,
+                'reg': reg,
+                'hoja_historial': hoja_hist,
+                'carpetas': carpetas,
+                'plantillas': plantillas,
+                'servicios': servicios
+            }
+
+        return config_empresas
+    except Exception as e:
+        print(f"Error parseando configuración de empresas: {e}")
+        return {}
+
+def buscar_config_empresa(empresa_nombre, config_empresas=None):
+    """Busca y retorna la configuración de una empresa emisora con soporte para coincidencias flexibles."""
+    if not config_empresas:
+        config_empresas = obtener_configuracion_empresas()
+    if not empresa_nombre:
+        return next(iter(config_empresas.values())) if config_empresas else {}
+    
+    emp_target = str(empresa_nombre).strip().upper()
+    # 1. Búsqueda exacta
+    for emp_k, cfg in config_empresas.items():
+        if emp_k.strip().upper() == emp_target:
+            return cfg
+            
+    # 2. Búsqueda normalizada (sin S.A.C., SAC, etc.)
+    emp_corta = emp_target.replace(" S.A.C.", "").replace(" SAC", "").replace(".", "").strip()
+    for emp_k, cfg in config_empresas.items():
+        k_corta = emp_k.strip().upper().replace(" S.A.C.", "").replace(" SAC", "").replace(".", "").strip()
+        if emp_corta in k_corta or k_corta in emp_corta:
+            return cfg
+            
+    # 3. Fallback al primero o a un dict por defecto
+    return next(iter(config_empresas.values())) if config_empresas else {}
+
 @st.cache_data(ttl=600)
 def obtener_datos_empresas_desde_sheets():
     """Lee la pestaña 'EMPRESAS' del Excel y devuelve un diccionario con RUC y Registro."""
-    SHEET_ID = '14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU'
-    RANGO = 'EMPRESAS!A2:C' # A=Empresa, B=RUC, C=Registro
-    
-    from src.services.google_service import obtener_servicios 
-    _, sheet_service = obtener_servicios()
-    
-    if not sheet_service: return {}
-    
-    try:
-        resultado = sheet_service.spreadsheets().values().get(spreadsheetId=SHEET_ID, range=RANGO).execute()
-        filas = resultado.get('values', [])
-        
+    cfgs = obtener_configuracion_empresas()
+    if cfgs:
         datos_dict = {}
-        for fila in filas:
-            if len(fila) >= 2:
-                nombre = str(fila[0]).strip().upper()
-                ruc = str(fila[1]).strip()
-                # Si hay columna C, la tomamos; si no, ponemos pendiente
-                reg = str(fila[2]).strip() if len(fila) >= 3 else "Pendiente"
-                
-                if nombre:
-                    datos_dict[nombre] = {"ruc": ruc, "reg": reg}
-                    
+        for emp, c in cfgs.items():
+            datos_dict[emp.upper()] = {"ruc": c["ruc"], "reg": c["reg"]}
+            emp_corta = emp.replace(" S.A.C.", "").replace(" SAC", "").replace(".", "").strip().upper()
+            datos_dict[emp_corta] = {"ruc": c["ruc"], "reg": c["reg"]}
         return datos_dict
-    except Exception as e:
-        print(f"Error leyendo base de datos de empresas: {e}")
-        return {}
+    return {}
 
 # ====================================================================
 # --- BLOQUE 4: Funciones de Repositorio Masivo ---
@@ -509,6 +630,8 @@ def extraer_id_drive(valor):
         return val_str
     
     patrones = [
+        r'drive\.google\.com/(?:drive/)?(?:u/\d+/)?folders/([a-zA-Z0-9_-]+)',
+        r'folders/([a-zA-Z0-9_-]+)',
         r'drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
         r'docs\.google\.com/(?:document|spreadsheets|presentation)/d/([a-zA-Z0-9_-]+)',
         r'drive\.google\.com/open\?id=([a-zA-Z0-9_-]+)',
@@ -1117,9 +1240,9 @@ def subir_pdf_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=No
         print(f"Error subiendo PDF a Drive: {e}") 
         return None
 
-def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, correlativo=None, link_doc=None):
+def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, correlativo=None, link_doc=None, hoja_destino="Historial"):
     """
-    Actualiza la columna I ('Link pdf') en la fila correspondiente de 'Historial'.
+    Actualiza la columna I ('Link pdf') en la fila correspondiente de la hoja de historial especificada.
     Si se pasa fila_historial válida, la usa directamente.
     Si no, busca la fila por correlativo o link_doc para máxima precisión y evitar filas duplicadas.
     """
@@ -1132,7 +1255,7 @@ def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, cor
         if not fila_destino:
             r = servicio_sheets.spreadsheets().values().get(
                 spreadsheetId=ID_SHEET_CONTROL,
-                range="'historial'!A:I"
+                range=f"'{hoja_destino}'!A:I"
             ).execute()
             filas = r.get('values', [])
             for idx, row in enumerate(filas):
@@ -1149,16 +1272,16 @@ def actualizar_link_pdf_historial(servicio_sheets, fila_historial, link_pdf, cor
             body = {"values": [[link_pdf]]}
             servicio_sheets.spreadsheets().values().update(
                 spreadsheetId=ID_SHEET_CONTROL,
-                range=f"'historial'!I{fila_destino}",
+                range=f"'{hoja_destino}'!I{fila_destino}",
                 valueInputOption="USER_ENTERED",
                 body=body
             ).execute()
             return True
         else:
-            print(f"No se pudo determinar la fila en Historial para correlativo={correlativo}, link={link_doc}")
+            print(f"No se pudo determinar la fila en {hoja_destino} para correlativo={correlativo}, link={link_doc}")
             return False
     except Exception as e:
-        print(f"Error actualizando link PDF en Historial: {e}")
+        print(f"Error actualizando link PDF en {hoja_destino}: {e}")
         return False
 
 def obtener_catalogo_servicios_por_categoria(df_servicios):
@@ -1197,9 +1320,9 @@ def obtener_catalogo_servicios_por_categoria(df_servicios):
 
     return secciones
 
-def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio_drive=None):
+def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio_drive=None, hoja_destino="Historial"):
     """
-    Busca certificados en la pestaña 'Historial' por número correlativo.
+    Busca certificados en la pestaña de historial especificada por número correlativo.
     Soporta formatos numéricos ('45' encuentra '045') o coincidencia de texto.
     Si se proporciona servicio_drive, resuelve automáticamente los enlaces web (webViewLink)
     de Drive en caso de que en la celda solo figure el nombre del archivo.
@@ -1210,7 +1333,7 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
     try:
         r = servicio_sheets.spreadsheets().values().get(
             spreadsheetId=ID_SHEET_CONTROL,
-            range="'historial'!A:J"
+            range=f"'{hoja_destino}'!A:J"
         ).execute()
         filas = r.get('values', [])
         if len(filas) < 2:
@@ -1266,7 +1389,8 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
                     "raw_doc": raw_doc,
                     "link_pdf": url_pdf,
                     "raw_pdf": raw_pdf,
-                    "observacion": str(row[9]).strip() if len(row) > 9 else ""
+                    "observacion": str(row[9]).strip() if len(row) > 9 else "",
+                    "hoja_historial": hoja_destino
                 })
 
         return resultados
@@ -1303,9 +1427,9 @@ def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_
     # Fallback: Subir como nuevo archivo
     return subir_pdf_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=carpeta_id)
 
-def registrar_edicion_en_historial(servicio_sheets, num_fila, link_pdf, usuario_editor="Usuario", obs_extra=""):
+def registrar_edicion_en_historial(servicio_sheets, num_fila, link_pdf, usuario_editor="Usuario", obs_extra="", hoja_destino="Historial"):
     """
-    Actualiza la fila correspondiente en la pestaña 'Historial':
+    Actualiza la fila correspondiente en la pestaña de historial especificada:
     - Columna I ('Link pdf'): Enlace actualizado del PDF unificado.
     - Columna J ('Obs'): Bitácora con fecha, hora y usuario editor.
     """
@@ -1323,12 +1447,12 @@ def registrar_edicion_en_historial(servicio_sheets, num_fila, link_pdf, usuario_
         }
         servicio_sheets.spreadsheets().values().update(
             spreadsheetId=ID_SHEET_CONTROL,
-            range=f"'historial'!I{num_fila}:J{num_fila}",
+            range=f"'{hoja_destino}'!I{num_fila}:J{num_fila}",
             valueInputOption="USER_ENTERED",
             body=body
         ).execute()
         return True
     except Exception as e:
-        print(f"Error registrando edición en Historial: {e}")
+        print(f"Error registrando edición en {hoja_destino}: {e}")
         return False
 

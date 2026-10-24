@@ -23,7 +23,8 @@ from src.services.google_service import (
     obtener_catalogo_servicios_por_categoria,
     convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
     sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
-    obtener_info_revision_documento_drive
+    obtener_info_revision_documento_drive,
+    obtener_configuracion_empresas, buscar_config_empresa
 )
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
@@ -266,7 +267,6 @@ if modulo_actual == "📄 Generador de Certificados":
         st.divider()
         
         # 2. Carga del Menú Dinámico
-        from src.services.google_service import obtener_mapa_plantillas_drive
         mapa_plantillas = obtener_mapa_plantillas_drive(es_modelo=es_modelo)
         
         # 3. Selectores de Empresa y Servicio
@@ -281,7 +281,7 @@ if modulo_actual == "📄 Generador de Certificados":
         opciones_finales = []
         
         # ==========================================
-        # 🚧 LECTURA DINÁMICA DESDE DRIVE 🚧
+        # 🚧 LECTURA DINÁMICA DESDE DRIVE / SHEETS 🚧
         # ==========================================
         if es_modelo:
             # 1. SI ES MODELO: Pasa directamente lo que Drive encuentre (Escalable 100%)
@@ -289,11 +289,13 @@ if modulo_actual == "📄 Generador de Certificados":
             if not opciones_finales:
                 opciones_finales = ["No se detectaron plantillas modelo en Drive"]
         else:
-            # 2. SI ES NORMAL: Mantiene tu lógica original
+            # 2. SI ES NORMAL: Lista los servicios configurados sin duplicados
             for serv in servicios_base:
                 if serv == "Disposición Final":
-                    opciones_finales.extend(["Disposición Final 1", "Disposición Final 2"])
-                else:
+                    for sf in ["Disposición Final 1", "Disposición Final 2"]:
+                        if sf not in opciones_finales:
+                            opciones_finales.append(sf)
+                elif serv not in opciones_finales:
                     opciones_finales.append(serv)
                     
             if not opciones_finales:
@@ -570,13 +572,21 @@ if modulo_actual == "📄 Generador de Certificados":
             ''', unsafe_allow_html=True)
 
         c1, c2, c3, c4 = st.columns(4)
-        # --- MEJORA: CÁLCULO INTELIGENTE DEL CORRELATIVO DESDE SHEETS ---
+        # --- MEJORA: CÁLCULO INTELIGENTE DEL CORRELATIVO DESDE SHEETS POR EMPRESA ---
         siguiente_corr = "001" # Valor por defecto si la hoja está vacía
         try:
-            from src.services.google_service import leer_sheet_seguro
+            from src.services.google_service import leer_sheet_seguro, buscar_config_empresa
             import pandas as pd
             
-            df_historial = leer_sheet_seguro("Historial")
+            cfg_emisor = buscar_config_empresa(empresa_firma)
+            hoja_hist_emp = cfg_emisor.get('hoja_historial', 'Historial')
+            
+            # Si el usuario cambió de empresa en el selector, resetear form_corr para recalcular
+            if st.session_state.get('last_empresa_calculo_corr') != empresa_firma:
+                st.session_state['last_empresa_calculo_corr'] = empresa_firma
+                st.session_state['form_corr'] = ""
+
+            df_historial = leer_sheet_seguro(hoja_hist_emp)
             
             if not df_historial.empty and "Correlativo" in df_historial.columns:
                 # BIFURCACIÓN PARA BÚSQUEDA INDEPENDIENTE
@@ -991,29 +1001,16 @@ if modulo_actual == "📄 Generador de Certificados":
                 emisor_ruc = st.text_input("RUC Emisor", value="", key="em_ruc_mod")
                 emisor_reg = st.text_input("Registro Emisor", value="", key="em_reg_mod")
             else:
-                # --- SI ES NORMAL: Lógica de búsqueda dinámica en Excel ---
+                # --- SI ES NORMAL: Lógica de búsqueda dinámica en configuración de empresas ---
                 info_emisor = None
                 try:
-                    from src.services.google_service import leer_sheet_seguro
-                    import pandas as pd
-                    
-                    df_empresas = leer_sheet_seguro("EMPRESAS")
-                    
-                    if not df_empresas.empty:
-                        nombres_excel = df_empresas.iloc[:, 0].astype(str).str.strip().str.upper()
-                        empresa_target = empresa_firma.strip().upper()
-                        
-                        fila = df_empresas[nombres_excel == empresa_target]
-                        
-                        if fila.empty:
-                            empresa_corta = empresa_target.replace(" S.A.C.", "").replace(" SAC", "").replace(".", "").strip()
-                            fila = df_empresas[nombres_excel.str.contains(empresa_corta, na=False)]
-                        
-                        if not fila.empty:
-                            info_emisor = {
-                                'ruc': str(fila.iloc[0, 1]).strip(),
-                                'reg': str(fila.iloc[0, 2]).strip()
-                            }
+                    from src.services.google_service import buscar_config_empresa
+                    cfg_emisor = buscar_config_empresa(empresa_firma)
+                    if cfg_emisor and cfg_emisor.get('ruc'):
+                        info_emisor = {
+                            'ruc': cfg_emisor['ruc'],
+                            'reg': cfg_emisor['reg']
+                        }
                 except Exception as e:
                     st.error(f"Error al conectar con la base de datos de empresas: {e}")        
 
@@ -1026,7 +1023,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.success("✅ Datos verificados desde la base de datos.")
                 else:
                     st.error("❌ ERROR DE SINCRONIZACIÓN")
-                    st.warning(f"La empresa '{empresa_firma}' no existe en la pestaña 'empresas' del Excel.")
+                    st.warning(f"La empresa '{empresa_firma}' no existe en la pestaña 'EMPRESAS' del Excel.")
                     emisor_nombre = empresa_firma
                     emisor_ruc = ""
                     emisor_reg = ""
@@ -1326,9 +1323,14 @@ if modulo_actual == "📄 Generador de Certificados":
                                 else:
                                     try:
                                         tipo_flujo_limpio = str(tipo_flujo).strip()
-                                        id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
+                                        cfg_emisor = buscar_config_empresa(empresa_firma)
+                                        id_p = cfg_emisor.get('plantillas', {}).get(tipo_flujo_limpio)
+                                        if not id_p and empresa_firma in PLANTILLAS:
+                                            id_p = PLANTILLAS[empresa_firma].get(tipo_flujo_limpio)
                                     except KeyError:
-                                        st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
+                                        id_p = None
+                                    if not id_p:
+                                        st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}'.")
                                         st.stop()
                                     
                                     f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
@@ -1388,14 +1390,15 @@ if modulo_actual == "📄 Generador de Certificados":
                                     link_drive = subir_modelo_a_drive(f"{nombre_archivo_final}.docx", final_bytes, drive)
                                     val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
                                 else:
-                                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
+                                    carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
                                     link_drive = subir_a_drive(final_bytes, nombre_archivo_final, tipo_flujo, carpeta_id=carpeta_exacta)
                                     val_cert = "COMERCIALIZACIÓN" if "Comercialización" in tipo_flujo else "FINAL"
                                     
                                 link_final = link_drive if link_drive else "Error de Permisos en Drive"
                                 fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
                                 datos_log = [fecha_registro, str(v_cli).strip().upper(), destino_final, corr_str, val_cert, str(archivo).upper(), "", link_final, "", ""]
-                                registrar_en_control(datos_log)
+                                hoja_hist_destino = cfg_emisor.get('hoja_historial', 'Historial')
+                                registrar_en_control(datos_log, hoja_destino=hoja_hist_destino)
                                 
                                 # --- MIGRACIÓN DIRECTA A SIGERSOL ---
                                 try:
@@ -1458,9 +1461,14 @@ if modulo_actual == "📄 Generador de Certificados":
                     else:
                         try:
                             tipo_flujo_limpio = str(tipo_flujo).strip()
-                            id_p = PLANTILLAS[empresa_firma][tipo_flujo_limpio]
+                            cfg_emisor = buscar_config_empresa(empresa_firma)
+                            id_p = cfg_emisor.get('plantillas', {}).get(tipo_flujo_limpio)
+                            if not id_p and empresa_firma in PLANTILLAS:
+                                id_p = PLANTILLAS[empresa_firma].get(tipo_flujo_limpio)
                         except KeyError:
-                            st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}' en la configuración base.")
+                            id_p = None
+                        if not id_p:
+                            st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}'.")
                             st.stop()
                         
                         f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
@@ -1627,10 +1635,8 @@ if modulo_actual == "📄 Generador de Certificados":
                     from src.services.google_service import subir_modelo_a_drive
                     link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
                 else:
-                    # --- AHORA SÍ: Usamos tus variables reales ---
-                    carpeta_exacta = CARPETAS_DESTINO[empresa_firma][tipo_flujo] 
-                    
-                    # Le enviamos esa carpeta exacta a la función y usamos buffer
+                    cfg_emisor = buscar_config_empresa(empresa_firma)
+                    carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
                     link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
                             
                 # 2. Armar la fila de datos para Sheets
@@ -1679,7 +1685,8 @@ if modulo_actual == "📄 Generador de Certificados":
                 v_corr_real = st.session_state.get('v_corr') or str(v_corr)
                 datos_log = [fecha_registro, val_empresa, val_fundo, v_corr_real, val_cert, val_guia_completa, "", link_final, "", ""]
                             
-                reg_res = registrar_en_control(datos_log)
+                hoja_hist_destino = cfg_emisor.get('hoja_historial', 'Historial') if not es_modelo else 'Historial'
+                reg_res = registrar_en_control(datos_log, hoja_destino=hoja_hist_destino)
                 if reg_res:
                     if link_drive:
                         st.session_state['msg_generado'] = False
@@ -1693,7 +1700,8 @@ if modulo_actual == "📄 Generador de Certificados":
                         st.session_state['subido_drive_id'] = extraer_id_drive(link_drive)
                         st.session_state['subido_drive_nombre'] = nombre_safe
                         st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
-                        carpeta_dest_safe = CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
+                        st.session_state['subido_hoja_historial'] = hoja_hist_destino
+                        carpeta_dest_safe = carpeta_exacta or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
                         st.session_state['subido_carpeta_exacta'] = carpeta_dest_safe
                         st.session_state['subido_tipo_flujo'] = tipo_flujo
                         tipo_cod_safe = st.session_state.get('tipo_cod') or ("COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER")
@@ -1815,13 +1823,15 @@ if modulo_actual == "📄 Generador de Certificados":
                                 
                                 # 6. Actualizar pestaña 'Historial' Columna I ('Link pdf')
                                 fila_hist = st.session_state.get('subido_fila_historial')
+                                hoja_hist_act = st.session_state.get('subido_hoja_historial', 'Historial')
                                 if link_pdf_drive:
                                     actualizar_link_pdf_historial(
                                         sht, 
                                         fila_hist, 
                                         link_pdf_drive, 
                                         correlativo=corr_c, 
-                                        link_doc=link_drive_actual
+                                        link_doc=link_drive_actual,
+                                        hoja_destino=hoja_hist_act
                                     )
                                 
                                 st.session_state['pdf_unido_buffer'] = pdf_unido_bytes
@@ -1854,7 +1864,11 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
     with tab_historial:
         st.markdown("### 1. Localizar Certificado en Historial")
-        c_busq1, c_busq2 = st.columns([3, 1])
+        cfg_empresas_hist = obtener_configuracion_empresas()
+        opciones_emp_busq = ["Todas"] + list(cfg_empresas_hist.keys())
+        c_emp, c_busq1, c_busq2 = st.columns([2, 2, 1])
+        with c_emp:
+            emp_busq_sel = st.selectbox("Empresa Emisora:", opciones_emp_busq, key="act_empresa_busq")
         with c_busq1:
             corr_busqueda = st.text_input("Ingrese N° Correlativo:", placeholder="Ej: 045, 001...", key="input_corr_actualizar")
         with c_busq2:
@@ -1864,17 +1878,31 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
         if btn_buscar_corr and corr_busqueda:
             with st.spinner("Buscando en Historial y resolviendo enlaces de Drive..."):
-                hallados = buscar_datos_certificado_en_historial(sht, corr_busqueda, servicio_drive=drv)
+                hallados = []
+                hojas_a_buscar = set()
+                if emp_busq_sel == "Todas":
+                    for c_info in cfg_empresas_hist.values():
+                        hojas_a_buscar.add(c_info.get("hoja_historial", "Historial"))
+                    if not hojas_a_buscar:
+                        hojas_a_buscar.add("Historial")
+                else:
+                    c_info = cfg_empresas_hist.get(emp_busq_sel, {})
+                    hojas_a_buscar.add(c_info.get("hoja_historial", "Historial"))
+
+                for h_dest in sorted(list(hojas_a_buscar)):
+                    res_h = buscar_datos_certificado_en_historial(sht, corr_busqueda, servicio_drive=drv, hoja_destino=h_dest)
+                    hallados.extend(res_h)
+
                 st.session_state['act_certificados_encontrados'] = hallados
                 if not hallados:
-                    st.warning(f"⚠️ No se encontró ningún certificado con el correlativo '{corr_busqueda}' en Historial.")
+                    st.warning(f"⚠️ No se encontró ningún certificado con el correlativo '{corr_busqueda}'.")
                 else:
                     st.success(f"✅ Se encontraron {len(hallados)} registro(s) para el correlativo '{corr_busqueda}'.")
 
         hallados = st.session_state.get('act_certificados_encontrados', [])
         if hallados:
             if len(hallados) > 1:
-                opciones_sel = [f"Fila {h['fila']} | {h['fecha']} | {h['empresa']} | {h['fundo']} | Guías: {h['guias']}" for h in hallados]
+                opciones_sel = [f"[{h.get('hoja_historial', 'Historial')}] Fila {h['fila']} | {h['fecha']} | {h['empresa']} | {h['fundo']} | Guías: {h['guias']}" for h in hallados]
                 sel_idx = st.selectbox("Seleccione el certificado específico a editar:", range(len(hallados)), format_func=lambda i: opciones_sel[i], key="sel_cert_multiple")
                 cert_sel = hallados[sel_idx]
             else:
@@ -2082,15 +2110,17 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 tipo_flujo=cert_sel.get('tipo_cert', 'Comercialización')
                             )
 
-                            # 5. Registrar auditoría en la pestaña 'Historial'
+                            # 5. Registrar auditoría en la pestaña correspondiente de Historial
                             usuario_editor = st.session_state.get('usuario_email', 'Usuario')
                             link_para_historial = nuevo_link_drive or cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
+                            hoja_hist_edicion = cert_sel.get('hoja_historial', 'Historial')
                             registrar_edicion_en_historial(
                                 sht, 
                                 cert_sel['fila'], 
                                 link_para_historial, 
                                 usuario_editor=usuario_editor, 
-                                obs_extra=obs_adicional
+                                obs_extra=obs_adicional,
+                                hoja_destino=hoja_hist_edicion
                             )
 
                             st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes

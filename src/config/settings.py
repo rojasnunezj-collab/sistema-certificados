@@ -25,6 +25,11 @@ CARPETAS_DESTINO = {
         "Comercialización": "1NZc-nfGHw5bnkCAv0TdQYW_bPM_UkKC-",
         "Disposición Final 1": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S",
         "Disposición Final 2": "12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S"
+    },
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": {
+        "Comercialización": "1i44hDtMx7kHm_2g1UyXeNo9cdMw_XSks",
+        "Disposición Final 1": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o",
+        "Disposición Final 2": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o"
     }
 }
 
@@ -41,6 +46,11 @@ PLANTILLAS = {
         "Comercialización": os.getenv("TEMPLATE_INECOVE_ID", "1MPzCwxR538osP3_br4VrTDybplqpTBtB08Jo"),
         "Disposición Final 1": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1W-HyVSivqug13gBRBclBuICAOSBUHm1WN5cnqtMQcZY"),
         "Disposición Final 2": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1W-HyVSivqug13gBRBclBuICAOSBUHm1WN5cnqtMQcZY")
+    },
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": {
+        "Comercialización": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM",
+        "Disposición Final 1": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM",
+        "Disposición Final 2": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM"
     }
 }
 
