@@ -427,17 +427,19 @@ def obtener_configuracion_empresas():
                     else:
                         plantillas[op_key.capitalize()] = clean_id
 
-            # Fallbacks desde settings.py si faltara alguna clave
-            if emp_nombre in CARPETAS_DESTINO:
-                for k, v in CARPETAS_DESTINO[emp_nombre].items():
-                    if k not in carpetas: carpetas[k] = v
-            if emp_nombre in PLANTILLAS:
-                for k, v in PLANTILLAS[emp_nombre].items():
-                    if k not in plantillas: plantillas[k] = v
+            # Fallbacks desde settings.py si la empresa no tuvo plantilla o carpeta en el Sheet
+            if not carpetas and emp_nombre in CARPETAS_DESTINO:
+                carpetas = dict(CARPETAS_DESTINO[emp_nombre])
+            if not plantillas and emp_nombre in PLANTILLAS:
+                plantillas = dict(PLANTILLAS[emp_nombre])
 
-            servicios = sorted(list(set(list(carpetas.keys()) + list(plantillas.keys()))))
+            # Los servicios ofertados dependen estrictamente de las plantillas existentes.
+            # Si solo tiene una plantilla, solo saldrá esa plantilla. Si tiene más, saldrán todas.
+            servicios = [s for s, pid in plantillas.items() if pid and str(pid).strip() and str(pid).strip().lower() != 'nan']
             if not servicios:
-                servicios = ['Comercialización', 'Disposición Final 1', 'Disposición Final 2']
+                servicios = [s for s, cid in carpetas.items() if cid and str(cid).strip() and str(cid).strip().lower() != 'nan']
+            if not servicios:
+                servicios = ['Disposición Final 1']
 
             config_empresas[emp_nombre] = {
                 'nombre': emp_nombre,

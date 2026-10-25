@@ -28,8 +28,7 @@ CARPETAS_DESTINO = {
     },
     "TRANSPORT & SERVICE ALHUAY S.A.C.": {
         "Comercialización": "1i44hDtMx7kHm_2g1UyXeNo9cdMw_XSks",
-        "Disposición Final 1": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o",
-        "Disposición Final 2": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o"
+        "Disposición Final 1": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o"
     }
 }
 
@@ -48,9 +47,7 @@ PLANTILLAS = {
         "Disposición Final 2": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1W-HyVSivqug13gBRBclBuICAOSBUHm1WN5cnqtMQcZY")
     },
     "TRANSPORT & SERVICE ALHUAY S.A.C.": {
-        "Comercialización": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM",
-        "Disposición Final 1": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM",
-        "Disposición Final 2": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM"
+        "Disposición Final 1": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM"
     }
 }
 

@@ -295,21 +295,22 @@ if modulo_actual == "📄 Generador de Certificados":
             if not opciones_finales:
                 opciones_finales = ["No se detectaron plantillas modelo en Drive"]
         else:
-            # 2. SI ES NORMAL: Lista los servicios configurados sin duplicados
+            # 2. SI ES NORMAL: Lista exactamente los servicios que tienen plantilla configurada
             for serv in servicios_base:
-                if serv == "Disposición Final":
-                    for sf in ["Disposición Final 1", "Disposición Final 2"]:
-                        if sf not in opciones_finales:
-                            opciones_finales.append(sf)
-                elif serv not in opciones_finales:
+                if serv and serv not in opciones_finales:
                     opciones_finales.append(serv)
                     
             if not opciones_finales:
-                opciones_finales = ["Comercialización", "Disposición Final 1", "Disposición Final 2"]
+                opciones_finales = ["Disposición Final 1"]
                 
         if repositorio_masivo and st.session_state.get('repo_tipo_flujo'):
             tipo_flujo_auto = st.session_state['repo_tipo_flujo']
-            idx_repo = opciones_finales.index(tipo_flujo_auto) if tipo_flujo_auto in opciones_finales else 0
+            if tipo_flujo_auto in opciones_finales:
+                idx_repo = opciones_finales.index(tipo_flujo_auto)
+                sel_tipo = tipo_flujo_auto
+            else:
+                idx_repo = 0
+                sel_tipo = opciones_finales[0] if opciones_finales else tipo_flujo_auto
             tipo_flujo = st.selectbox(
                 "Tipo de Certificado", 
                 options=opciones_finales, 
@@ -317,7 +318,7 @@ if modulo_actual == "📄 Generador de Certificados":
                 disabled=True, 
                 help="Definido automáticamente desde la Columna J de las guías en el repositorio"
             )
-            tipo_flujo = tipo_flujo_auto
+            tipo_flujo = sel_tipo
         else:
             tipo_flujo = st.selectbox("Tipo de Certificado", options=opciones_finales)
 
@@ -1333,6 +1334,8 @@ if modulo_actual == "📄 Generador de Certificados":
                                         id_p = cfg_emisor.get('plantillas', {}).get(tipo_flujo_limpio)
                                         if not id_p and empresa_firma in PLANTILLAS:
                                             id_p = PLANTILLAS[empresa_firma].get(tipo_flujo_limpio)
+                                        if not id_p and len(cfg_emisor.get('plantillas', {})) == 1:
+                                            id_p = next(iter(cfg_emisor['plantillas'].values()))
                                     except KeyError:
                                         id_p = None
                                     if not id_p:
@@ -1397,6 +1400,8 @@ if modulo_actual == "📄 Generador de Certificados":
                                     val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
                                 else:
                                     carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
+                                    if not carpeta_exacta and cfg_emisor.get('carpetas'):
+                                        carpeta_exacta = next(iter(cfg_emisor['carpetas'].values()))
                                     link_drive = subir_a_drive(final_bytes, nombre_archivo_final, tipo_flujo, carpeta_id=carpeta_exacta)
                                     val_cert = "COMERCIALIZACIÓN" if "Comercialización" in tipo_flujo else "FINAL"
                                     
@@ -1471,6 +1476,8 @@ if modulo_actual == "📄 Generador de Certificados":
                             id_p = cfg_emisor.get('plantillas', {}).get(tipo_flujo_limpio)
                             if not id_p and empresa_firma in PLANTILLAS:
                                 id_p = PLANTILLAS[empresa_firma].get(tipo_flujo_limpio)
+                            if not id_p and len(cfg_emisor.get('plantillas', {})) == 1:
+                                id_p = next(iter(cfg_emisor['plantillas'].values()))
                         except KeyError:
                             id_p = None
                         if not id_p:
@@ -1643,6 +1650,8 @@ if modulo_actual == "📄 Generador de Certificados":
                 else:
                     cfg_emisor = buscar_config_empresa(empresa_firma)
                     carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
+                    if not carpeta_exacta and cfg_emisor.get('carpetas'):
+                        carpeta_exacta = next(iter(cfg_emisor['carpetas'].values()))
                     link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
                             
                 # 2. Armar la fila de datos para Sheets
