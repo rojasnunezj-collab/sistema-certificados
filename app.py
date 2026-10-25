@@ -206,7 +206,7 @@ if 'datos_extraidos' not in st.session_state:
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🔄 Actualizar Expediente", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
+modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🔄 Actualizar Expediente", "📑 Expedientes Petramás", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
 
 if modulo_actual == "📄 Generador de Certificados":
     # ====================================================================
@@ -2203,6 +2203,22 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     mime="application/pdf",
                     key="btn_descarga_swap_manual"
                 )
+
+elif modulo_actual == "📑 Expedientes Petramás":
+    with st.sidebar:
+        st.info("⚙️ Controles Petramás")
+        if st.button("Limpiar Sesión Petramás", key="btn_limpiar_sesion_petramas", use_container_width=True):
+            llaves_petramas = [
+                'inversa_datos_extraidos', 'inversa_pdf_bytes', 'inversa_resultado_desglose',
+                'resultado_ensamblado', 'constancia_analizada_data', 'constancia_analizada_bytes'
+            ]
+            for k in llaves_petramas:
+                st.session_state.pop(k, None)
+            st.toast("Memoria temporal de Petramás limpiada.")
+            st.rerun()
+
+    from src.modules.petramas import render_petramas
+    render_petramas()
 
 elif modulo_actual == "🏢 Sigersol":
     with st.sidebar:

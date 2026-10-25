@@ -14,6 +14,56 @@ load_dotenv()
 ID_SHEET_REPOSITORIO = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_SIGERSOL = os.getenv("ID_SHEET_SIGERSOL", "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
+ID_SHEET_PETRAMAS = os.getenv("ID_SHEET_PETRAMAS", ID_SHEET_CONTROL)
+
+# Hojas especializadas en Google Sheets para Petramás
+SHEET_CERTIFICADOS_PETRAMAS = "Certificados_Petramas"
+SHEET_SUSTENTOS_CAMPO = "Sustentos_Campo"
+
+# Estructura obligatoria de carpetas Google Drive para Petramás
+CARPETAS_PETRAMAS = {
+    "root": os.getenv("DRIVE_PETRAMAS_ROOT", "1hBZhJ5DX-nri8l79-KrVqxoCXuxAItNu"),
+    "certificados_root": "1fkHtb0BcGgHlE6PXbrYIEOdE267RPlxW",
+    "sustentos_root": "16pBskzUWjrusbEsr_jvyR2mqKVZN1awY",
+    "expedientes_root": "1OBBSMNLslYowxBSc8TLvdH_Zhmy9vRVF",
+    "certificados": {
+        "EPMI S.A.C.": "1qn4ASHsBzj8vJKc2JVoXH-qJKCh9a6ku",
+        "INECOVE S.A.C.": "14Jz6yiTjqp-jTG2W_OKbsnR_zE6v7fcc",
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1cdGN3HtIhyDuHc4yodZew0UdDYv2Qn89"
+    },
+    "sustentos": {
+        "EPMI S.A.C.": "1CMe0hTVCN5kfNxbJ0575Br6AnRFKJ0R_",
+        "INECOVE S.A.C.": "1OZGDSpMcmbTp1ySWJumMJdXToaUNOysB",
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "134k-n-yXMm-VFdxViZIgkDEV7M0VIz90"
+    },
+    "expedientes": {
+        "EPMI S.A.C.": "1f4QTNEeN6lC31NYAe9cLaE2g91-gU3H1",
+        "INECOVE S.A.C.": "1xdPgXvI7cwgl9tKaR7gzKPBorlblQj_H",
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1mJwsQWRSAWBVHt_CDUPPz6Sh8oBBUVaY"
+    }
+}
+
+# Configuración de las 3 Empresas Operadoras (EO-RS)
+EMPRESAS_EORS = {
+    "EPMI S.A.C.": {
+        "ruc": "20601955938",
+        "hoja_historial": "Historial",
+        "prefijo_cert": "CERT-SER",
+        "alias": ["EPMI", "EPMI S.A.C.", "EMPRESA EPMI S.A.C."]
+    },
+    "INECOVE S.A.C.": {
+        "ruc": "20607873330",
+        "hoja_historial": "Historial_INECOVE",
+        "prefijo_cert": "CERT-SER",
+        "alias": ["INECOVE", "INECOVE S.A.C.", "INVERSIONES ECOLOGICAS DEL PERU"]
+    },
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": {
+        "ruc": "20600862596",
+        "hoja_historial": "Historial_ALHUAY",
+        "prefijo_cert": "CERT-SER",
+        "alias": ["ALHUAY", "TRANSPORT & SERVICE ALHUAY", "TRANSPORT & SERVICE ALHUAY S.A.C."]
+    }
+}
 
 CARPETAS_DESTINO = {
     "EPMI S.A.C.": {
