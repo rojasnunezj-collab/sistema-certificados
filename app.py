@@ -12,20 +12,26 @@ from datetime import datetime, timedelta
 from src.services.vertex_service import procesar_guia_ia_vertex
 
 # --- MEJORA: Añadimos leer_sheet_seguro a la lista de importaciones ---
-from src.services.google_service import (
-    obtener_servicios, subir_a_drive, obtener_plantilla_drive, 
-    subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
-    obtener_datos_empresas_desde_sheets, registrar_en_control,
-    leer_sheet_seguro,
-    obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
-    buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
-    subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
-    obtener_catalogo_servicios_por_categoria,
-    convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
-    sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
-    obtener_info_revision_documento_drive,
-    obtener_configuracion_empresas, buscar_config_empresa
-)
+try:
+    from src.services.google_service import (
+        obtener_servicios, subir_a_drive, obtener_plantilla_drive, 
+        subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
+        obtener_datos_empresas_desde_sheets, registrar_en_control,
+        leer_sheet_seguro,
+        obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
+        buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
+        subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
+        obtener_catalogo_servicios_por_categoria,
+        convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
+        sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
+        obtener_info_revision_documento_drive,
+        obtener_configuracion_empresas, buscar_config_empresa
+    )
+except ImportError as err_import:
+    import traceback
+    st.error(f"❌ Error al inicializar servicios de Google: {err_import}")
+    st.code(traceback.format_exc())
+    st.stop()
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
 from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf

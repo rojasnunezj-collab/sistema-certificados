@@ -2,7 +2,7 @@ secretoslocal.json
 credentials.json
 token.json
 .env
-.streamlit/
+.streamlit/secrets.toml
 __pycache__/
 **/__pycache__/
 *.pyc

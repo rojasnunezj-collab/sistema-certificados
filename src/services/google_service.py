@@ -275,7 +275,6 @@ def obtener_mapa_plantillas_drive(es_modelo=False):
                 mapa_dinamico[emp] = cfg.get("servicios", ["Comercialización", "Disposición Final 1", "Disposición Final 2"])
             return mapa_dinamico
 
-    from src.services.google_service import obtener_servicios
     drive_service, _ = obtener_servicios()
     
     if not drive_service: 
@@ -327,7 +326,6 @@ def obtener_clientes_desde_sheets():
     SHEET_ID = '14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU'
     RANGO = 'CLIENTES!A2:B' 
     
-    from src.services.google_service import obtener_servicios 
     # LA CORRECCIÓN: Llamamos a los dos robots en el orden correcto
     drive_service, sheet_service = obtener_servicios() 
     
@@ -365,7 +363,6 @@ def obtener_configuracion_empresas():
     Permite agregar nuevas empresas y carpetas directamente desde el Sheet sin tocar código.
     """
     from src.config.settings import PLANTILLAS, CARPETAS_DESTINO
-    from src.services.google_service import leer_sheet_seguro, extraer_id_drive
 
     config_empresas = {}
     try:
@@ -772,7 +769,6 @@ def buscar_actualizar_guia(servicio_sheets, num_guia):
 @st.cache_data(ttl=600, show_spinner=False)
 def obtener_usuarios_roles():
     """Descarga los roles de usuario desde la hoja 'Usuario_Roles'."""
-    from src.services.google_service import obtener_servicios
     import time
     _, servicio_sheets = obtener_servicios()
     
@@ -817,7 +813,6 @@ def obtener_usuarios_roles():
 def registrar_auditoria_sistema(correo, modo, guias_leidas, guias_certificadas):
     """Registra en la pestaña 'Control' del Sheet RBAC."""
     SHEET_ID = "1OglcHUuRkD6LErUMevr-tOmAsLZpQEk2OKn8NyJN8mo" 
-    from src.services.google_service import obtener_servicios
     from datetime import datetime
     _, sheets = obtener_servicios()
     if not sheets: return False
