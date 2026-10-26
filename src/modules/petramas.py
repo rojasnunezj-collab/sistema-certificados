@@ -411,9 +411,11 @@ def render_petramas():
         def _pags_to_list(txt: str) -> List[int]:
             return [int(x) for x in txt.replace(" ", "").split(",") if x.isdigit()]
 
+        ya_ensamblado = bool(st.session_state.get('resultado_ensamblado'))
         btn_ensamblar = st.button(
-            "⚡ Ensamblar y Publicar Expediente Final",
+            "✅ Expediente Ya Ensamblado y Publicado" if ya_ensamblado else "⚡ Ensamblar y Publicar Expediente Final",
             type="primary",
+            disabled=ya_ensamblado,
             use_container_width=True,
             key="btn_run_ensamblar"
         )
@@ -467,6 +469,9 @@ def render_petramas():
                         mime="application/pdf",
                         use_container_width=True
                     )
+            if st.button("🔄 Ensamblar Otro Expediente", key="btn_reset_ensamblar", use_container_width=True):
+                del st.session_state['resultado_ensamblado']
+                st.rerun()
 
     # ====================================================================
     # --- TAB 4: CONSTANCIAS PETRAMÁS ---

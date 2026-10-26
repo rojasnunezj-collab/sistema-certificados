@@ -514,6 +514,21 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.session_state.pop('input_ruc_ocr', None)
                     st.session_state.pop('_prev_cli_ocr', None)
                     st.session_state.pop('v_items_working', None)
+                    # Resetear estado de generación previa para habilitar el botón
+                    st.session_state['generado'] = False
+                    st.session_state['generando_cert'] = False
+                    st.session_state.pop('res_migracion_sigersol', None)
+                    st.session_state.pop('word_buffer', None)
+                    st.session_state.pop('nombre_generado', None)
+                    st.session_state.pop('subido_drive_link', None)
+                    st.session_state.pop('subido_drive_id', None)
+                    st.session_state.pop('pdf_unido_link', None)
+                    st.session_state.pop('pdf_unido_buffer', None)
+                    st.session_state.pop('individual_exitosos', None)
+                    st.session_state.pop('individual_fallidos', None)
+                    st.session_state.pop('modalidad_individual_finalizada', None)
+                    st.session_state['msg_generado'] = False
+                    st.session_state['msg_descargado'] = False
                     st.success(f"✅ Procesado, Limpiado y Ordenado: {len(items)} items de {total} archivos.")
                 else: st.error("❌ Falló: No se encontraron items.")
 
@@ -536,6 +551,20 @@ if modulo_actual == "📄 Generador de Certificados":
             }])
             st.session_state['df_items'] = df_vacio
             st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+            st.session_state['generado'] = False
+            st.session_state['generando_cert'] = False
+            st.session_state.pop('res_migracion_sigersol', None)
+            st.session_state.pop('word_buffer', None)
+            st.session_state.pop('nombre_generado', None)
+            st.session_state.pop('subido_drive_link', None)
+            st.session_state.pop('subido_drive_id', None)
+            st.session_state.pop('pdf_unido_link', None)
+            st.session_state.pop('pdf_unido_buffer', None)
+            st.session_state.pop('individual_exitosos', None)
+            st.session_state.pop('individual_fallidos', None)
+            st.session_state.pop('modalidad_individual_finalizada', None)
+            st.session_state['msg_generado'] = False
+            st.session_state['msg_descargado'] = False
             st.session_state['form_guia'] = ''
             st.session_state['form_placa'] = ''
             st.session_state['form_partida'] = ''
@@ -1275,10 +1304,60 @@ if modulo_actual == "📄 Generador de Certificados":
                     )
 
         # EL BOTÓN SOLO APARECE AQUÍ, SI formulario_completo es VERDADERO
-        if st.button("GENERAR CERTIFICADOS" if "Individual" in modalidad_gen else "GENERAR CERTIFICADO", type="primary"):
+        ya_generado = bool(st.session_state.get('generado', False))
+        esta_generando = bool(st.session_state.get('generando_cert', False))
+        bloquear_btn_generar = ya_generado or esta_generando
+        es_individual = "Individual" in modalidad_gen
+
+        if ya_generado:
+            btn_label = "✅ CERTIFICADOS YA GENERADOS" if es_individual else "✅ CERTIFICADO YA GENERADO"
+        elif esta_generando:
+            btn_label = "⏳ GENERANDO CERTIFICADOS..." if es_individual else "⏳ GENERANDO CERTIFICADO..."
+        else:
+            btn_label = "GENERAR CERTIFICADOS" if es_individual else "GENERAR CERTIFICADO"
+
+        if ya_generado:
+            col_b1, col_b2 = st.columns([3, 1])
+            with col_b1:
+                click_generar = st.button(
+                    btn_label, 
+                    type="primary", 
+                    disabled=True, 
+                    key="btn_generar_principal", 
+                    use_container_width=True
+                )
+            with col_b2:
+                if st.button("🔄 Nuevo Certificado", help="Desbloquea para generar otro certificado o reiniciar", use_container_width=True, key="btn_desbloquear_gen"):
+                    st.session_state['generado'] = False
+                    st.session_state['generando_cert'] = False
+                    st.session_state.pop('res_migracion_sigersol', None)
+                    st.session_state.pop('word_buffer', None)
+                    st.session_state.pop('nombre_generado', None)
+                    st.session_state.pop('subido_drive_link', None)
+                    st.session_state.pop('subido_drive_id', None)
+                    st.session_state.pop('pdf_unido_link', None)
+                    st.session_state.pop('pdf_unido_buffer', None)
+                    st.session_state.pop('individual_exitosos', None)
+                    st.session_state.pop('individual_fallidos', None)
+                    st.session_state.pop('modalidad_individual_finalizada', None)
+                    st.session_state['msg_generado'] = False
+                    st.session_state['msg_descargado'] = False
+                    st.rerun()
+            st.info("🔒 **El certificado ya fue generado y sus datos fueron migrados a Sigersol.** El botón de generar se encuentra bloqueado para evitar duplicaciones en Sigersol y Drive. Para generar otro certificado o modificar datos, presiona **'🔄 Nuevo Certificado'** o **'Limpiar Sesión'**.")
+        else:
+            click_generar = st.button(
+                btn_label, 
+                type="primary", 
+                disabled=bloquear_btn_generar, 
+                key="btn_generar_principal", 
+                use_container_width=True
+            )
+
+        if click_generar:
             if hay_error_placa_guia and not confirmar_forzar:
                 st.error("⛔ Operación detenida: Corrige el número de Placa / Guía o marca la casilla de confirmación para proceder.")
                 st.stop()
+            st.session_state['generando_cert'] = True
 
             # --- ORDENAMIENTO CRONOLÓGICO PARA EL DOCUMENTO ---
             if 'fecha_origen' in v_items_df.columns:
@@ -1463,8 +1542,14 @@ if modulo_actual == "📄 Generador de Certificados":
                         if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
                             del st.session_state['guias_repo']
                             
-                        st.info("El lote de certificados individuales finalizó.")
-                        st.stop()
+                        st.session_state['generado'] = True
+                        st.session_state['generando_cert'] = False
+                        st.session_state['individual_exitosos'] = exitosos
+                        st.session_state['individual_fallidos'] = fallidos
+                        st.session_state['modalidad_individual_finalizada'] = True
+                        st.session_state['msg_generado'] = True
+                        st.balloons()
+                        st.rerun()
                     if es_modelo:
                         from src.services.google_service import obtener_plantilla_drive
                         fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
@@ -1565,6 +1650,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.session_state.v_corr = v_corr
                     st.session_state.destino_final = destino_final
                     st.session_state.generado = True
+                    st.session_state['generando_cert'] = False
                     
                     st.session_state['msg_generado'] = True
                     st.session_state['msg_descargado'] = False
@@ -1601,148 +1687,166 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.rerun()
 
                 except Exception as e:
+                    st.session_state['generando_cert'] = False
+                    st.session_state['generado'] = False
                     st.error(f"Error: {e}")
                     link_final = "Error"
 
     # --- 2. MOSTRAR DESCARGA Y REGISTRO (SOLO SI YA SE GENERÓ) ---
     if st.session_state.get('generado'):
-        if st.session_state.get('msg_generado'):
-            st.success("Certificado generado exitosamente en memoria.")
+        if st.session_state.get('modalidad_individual_finalizada'):
+            exitosos = st.session_state.get('individual_exitosos', [])
+            fallidos = st.session_state.get('individual_fallidos', [])
+            if exitosos:
+                st.success(f"✅ Se generaron {len(exitosos)} certificados individuales exitosamente y fueron migrados a Sigersol.")
+            if fallidos:
+                st.error(f"⚠️ Hubo {len(fallidos)} guías que fallaron durante la generación.")
+                with st.expander("Ver detalles de errores"):
+                    for f_arch, f_err in fallidos:
+                        st.write(f"- **Guía {f_arch}**: {f_err}")
+            st.info("💡 Cada certificado individual fue subido a Google Drive y registrado en el Historial y Sigersol.")
+        else:
+            if st.session_state.get('msg_generado'):
+                st.success("Certificado generado exitosamente en memoria.")
+                
+            res_sig = st.session_state.get('res_migracion_sigersol')
+            if res_sig:
+                if res_sig.get('ya_existia'):
+                    st.info(f"🌐 **SIGERSOL:** {res_sig.get('aviso')}")
+                elif res_sig.get('ok'):
+                    st.success(f"🌐 **SIGERSOL:** Se migraron {res_sig.get('filas_insertadas', 0)} registros a la pestaña **`{res_sig.get('pestana', '')}`** en el documento *3 trimestre*.")
+                else:
+                    st.warning(f"⚠️ **SIGERSOL (Aviso):** No se pudo migrar automáticamente a Sigersol ({res_sig.get('error', 'Desconocido')}).")
+                
+            nombre_safe = st.session_state.get('nombre_generado', 'Certificado')
             
-        res_sig = st.session_state.get('res_migracion_sigersol')
-        if res_sig:
-            if res_sig.get('ok'):
-                st.success(f"🌐 **SIGERSOL:** Se migraron {res_sig.get('filas_insertadas', 0)} registros a la pestaña **`{res_sig.get('pestana', '')}`** en el documento *3 trimestre*.")
-            else:
-                st.warning(f"⚠️ **SIGERSOL (Aviso):** No se pudo migrar automáticamente a Sigersol ({res_sig.get('error', 'Desconocido')}).")
-            
-        nombre_safe = st.session_state.get('nombre_generado', 'Certificado')
-        
-        def confirmar_descarga():
-            st.session_state['msg_descargado'] = True
-            st.session_state['msg_generado'] = False
+            def confirmar_descarga():
+                st.session_state['msg_descargado'] = True
+                st.session_state['msg_generado'] = False
 
-        st.download_button(
-            label="📩 Descargar Certificado", 
-            data=st.session_state.word_buffer, 
-            file_name=f"{nombre_safe}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            on_click=confirmar_descarga
-        )
-        
-        if st.session_state.get('msg_descargado'):
-            st.success("Certificado descargado exitosamente.")
-
-        if st.button("💾 Registrar y Subir a Drive"):
-            with st.spinner("Subiendo a Google Drive y registrando en Sheets... 🚀"):
-                # Calculamos peso total para el log
-                peso_t = sum([float(str(x).replace(',','.')) for x in v_items_df['peso'] if str(x).strip() not in ['None', '', 'nan']]) if 'peso' in v_items_df.columns else 0
-                
-                buffer = st.session_state.word_buffer
-                nombre_safe = st.session_state.nombre_generado
-                
-                servicio_drive, _ = obtener_servicios()
-                
-                # 1. Ejecutar el enrutador hacia Drive
-                if es_modelo:
-                    from src.services.google_service import subir_modelo_a_drive
-                    link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
-                else:
-                    cfg_emisor = buscar_config_empresa(empresa_firma)
-                    carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
-                    if not carpeta_exacta and cfg_emisor.get('carpetas'):
-                        carpeta_exacta = next(iter(cfg_emisor['carpetas'].values()))
-                    link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
-                            
-                # 2. Armar la fila de datos para Sheets
-                link_final = link_drive if link_drive else "Error de Permisos en Drive"
-                            
-                # --- LÓGICA DE EXTRACCIÓN PARA SHEETS (REPLICADA) ---
-                nombre_crudo = str(v_partida).split(' - ')[-1].strip()
-                import re
-                nombre_crudo = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', nombre_crudo).strip()
-                nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
-                
-                if ' - ' not in str(v_partida) and len(nombre_limpio.split()) > 1:
-                    nombre_limpio = nombre_limpio.split()[0]
-                            
-                from datetime import datetime
-                val_empresa = str(v_cli).strip().upper()
-                val_fundo = str(nombre_limpio).strip().upper()
-                            
-                if es_modelo:
-                    val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
-                else:
-                    val_cert = "COMERCIALIZACIÓN" if "Comercialización" in tipo_flujo else "FINAL"
-                            
-                # --- 1. Lógica para capturar MÚLTIPLES guías ---
-                if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
-                    guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
-                    val_guia_completa = ", ".join(guias_lista)
-                    num_certificadas = len(guias_lista)
-                else:
-                    val_guia_completa = str(v_guia).strip().upper()
-                    num_certificadas = 1 if val_guia_completa else 0
-
-                # --- NUEVO: Inyección del Registro de Auditoría Control ---
-                modo_audio = "Modelo" if es_modelo else ("Manual" if modo_manual else ("OCR Masivo" if repositorio_masivo else "OCR PDF"))
-                from src.services.google_service import registrar_auditoria_sistema
-                registrar_auditoria_sistema(
-                    st.session_state.get('usuario_email', 'Desconocido'), 
-                    modo_audio, 
-                    st.session_state.get('total_pdfs_leidos', 0), 
-                    num_certificadas
+            if 'word_buffer' in st.session_state and st.session_state.word_buffer:
+                st.download_button(
+                    label="📩 Descargar Certificado", 
+                    data=st.session_state.word_buffer, 
+                    file_name=f"{nombre_safe}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    on_click=confirmar_descarga
                 )
+            
+            if st.session_state.get('msg_descargado'):
+                st.success("Certificado descargado exitosamente.")
 
-                # --- 2. Fecha y armado de datos para Sheets ---
-                from datetime import datetime, timedelta
-                fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
-                v_corr_real = st.session_state.get('v_corr') or str(v_corr)
-                datos_log = [fecha_registro, val_empresa, val_fundo, v_corr_real, val_cert, val_guia_completa, "", link_final, "", ""]
-                            
-                hoja_hist_destino = cfg_emisor.get('hoja_historial', 'Historial') if not es_modelo else 'Historial'
-                reg_res = registrar_en_control(datos_log, hoja_destino=hoja_hist_destino)
-                if reg_res:
-                    if link_drive:
-                        st.session_state['msg_generado'] = False
-                        st.session_state['msg_descargado'] = False
-                        st.session_state['metricas_exitosos'] += 1
-                        
-                        st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
-                        
-                        # Guardar metadatos para el flujo de unión de expediente
-                        st.session_state['subido_drive_link'] = link_drive
-                        st.session_state['subido_drive_id'] = extraer_id_drive(link_drive)
-                        st.session_state['subido_drive_nombre'] = nombre_safe
-                        st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
-                        st.session_state['subido_hoja_historial'] = hoja_hist_destino
-                        carpeta_dest_safe = carpeta_exacta or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
-                        st.session_state['subido_carpeta_exacta'] = carpeta_dest_safe
-                        st.session_state['subido_tipo_flujo'] = tipo_flujo
-                        tipo_cod_safe = st.session_state.get('tipo_cod') or ("COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER")
-                        destino_safe = st.session_state.get('destino_final') or (val_fundo if val_fundo and val_fundo != "NAN" else str(v_cli).strip().upper())
-                        st.session_state['subido_tipo_cod'] = tipo_cod_safe
-                        st.session_state['subido_v_corr'] = v_corr_real
-                        st.session_state['subido_destino_final'] = destino_safe
-                        st.session_state['subido_guias_lista'] = guias_lista if 'guias_lista' in locals() else ([str(v_guia).strip().upper()] if str(v_guia).strip() else [])
-                        
-                        # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
-                        if num_certificadas > 0:
-                            for g_str in guias_lista:
-                                inyectar_estado_sheets_robusto(g_str)
-                        elif val_guia_completa:
-                            inyectar_estado_sheets_robusto(val_guia_completa)
-                        
-                        if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
-                            del st.session_state['guias_repo'] # Limpiar sesión
-                            
-                        st.markdown(f"📄 **Certificado Generado:** [Ver Documento en Drive]({link_drive})")
-                        
-                        st.cache_data.clear() 
+            ya_subido = bool(st.session_state.get('subido_drive_link'))
+            if st.button("✅ Ya Registrado y Subido a Drive" if ya_subido else "💾 Registrar y Subir a Drive", disabled=ya_subido, key="btn_subir_drive_historial"):
+                with st.spinner("Subiendo a Google Drive y registrando en Sheets... 🚀"):
+                    # Calculamos peso total para el log
+                    peso_t = sum([float(str(x).replace(',','.')) for x in v_items_df['peso'] if str(x).strip() not in ['None', '', 'nan']]) if 'peso' in v_items_df.columns else 0
+                    
+                    buffer = st.session_state.word_buffer
+                    nombre_safe = st.session_state.nombre_generado
+                    
+                    servicio_drive, _ = obtener_servicios()
+                    
+                    # 1. Ejecutar el enrutador hacia Drive
+                    if es_modelo:
+                        from src.services.google_service import subir_modelo_a_drive
+                        link_drive = subir_modelo_a_drive(f"{nombre_safe}.docx", buffer, servicio_drive)
                     else:
-                        st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
-                else:
-                    st.error("❌ Falló la conexión con Sheets.")
+                        cfg_emisor = buscar_config_empresa(empresa_firma)
+                        carpeta_exacta = cfg_emisor.get('carpetas', {}).get(tipo_flujo) or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo)
+                        if not carpeta_exacta and cfg_emisor.get('carpetas'):
+                            carpeta_exacta = next(iter(cfg_emisor['carpetas'].values()))
+                        link_drive = subir_a_drive(buffer, nombre_safe, tipo_flujo, carpeta_id=carpeta_exacta)
+                                
+                    # 2. Armar la fila de datos para Sheets
+                    link_final = link_drive if link_drive else "Error de Permisos en Drive"
+                                
+                    # --- LÓGICA DE EXTRACCIÓN PARA SHEETS (REPLICADA) ---
+                    nombre_crudo = str(v_partida).split(' - ')[-1].strip()
+                    import re
+                    nombre_crudo = re.sub(r'(?i)^(Av\.|Avenida|Calle|Jr\.|Jirón|Pasaje|Carretera|Panamericana)\s+', '', nombre_crudo).strip()
+                    nombre_limpio = re.sub(r'(?i)^(Planta|Fundo|Sede|Sucursal|Predio)\s+', '', nombre_crudo).strip()
+                    
+                    if ' - ' not in str(v_partida) and len(nombre_limpio.split()) > 1:
+                        nombre_limpio = nombre_limpio.split()[0]
+                                
+                    from datetime import datetime
+                    val_empresa = str(v_cli).strip().upper()
+                    val_fundo = str(nombre_limpio).strip().upper()
+                                
+                    if es_modelo:
+                        val_cert = "M-COM" if "Comercialización" in tipo_flujo else "M-FIN"
+                    else:
+                        val_cert = "COMERCIALIZACIÓN" if "Comercialización" in tipo_flujo else "FINAL"
+                                
+                    # --- 1. Lógica para capturar MÚLTIPLES guías ---
+                    if not v_items_df.empty and 'guia_origen' in v_items_df.columns:
+                        guias_lista = [str(g).strip().upper() for g in v_items_df['guia_origen'].unique() if str(g).strip() not in ['None', '', 'nan']]
+                        val_guia_completa = ", ".join(guias_lista)
+                        num_certificadas = len(guias_lista)
+                    else:
+                        val_guia_completa = str(v_guia).strip().upper()
+                        num_certificadas = 1 if val_guia_completa else 0
+
+                    # --- NUEVO: Inyección del Registro de Auditoría Control ---
+                    modo_audio = "Modelo" if es_modelo else ("Manual" if modo_manual else ("OCR Masivo" if repositorio_masivo else "OCR PDF"))
+                    from src.services.google_service import registrar_auditoria_sistema
+                    registrar_auditoria_sistema(
+                        st.session_state.get('usuario_email', 'Desconocido'), 
+                        modo_audio, 
+                        st.session_state.get('total_pdfs_leidos', 0), 
+                        num_certificadas
+                    )
+
+                    # --- 2. Fecha y armado de datos para Sheets ---
+                    from datetime import datetime, timedelta
+                    fecha_registro = (datetime.utcnow() - timedelta(hours=5)).strftime("%d/%m/%Y")
+                    v_corr_real = st.session_state.get('v_corr') or str(v_corr)
+                    datos_log = [fecha_registro, val_empresa, val_fundo, v_corr_real, val_cert, val_guia_completa, "", link_final, "", ""]
+                                
+                    hoja_hist_destino = cfg_emisor.get('hoja_historial', 'Historial') if not es_modelo else 'Historial'
+                    reg_res = registrar_en_control(datos_log, hoja_destino=hoja_hist_destino)
+                    if reg_res:
+                        if link_drive:
+                            st.session_state['msg_generado'] = False
+                            st.session_state['msg_descargado'] = False
+                            st.session_state['metricas_exitosos'] += 1
+                            
+                            st.success("✅ ¡Operación Exitosa! Documento en Drive y base de datos actualizada.")
+                            
+                            # Guardar metadatos para el flujo de unión de expediente
+                            st.session_state['subido_drive_link'] = link_drive
+                            st.session_state['subido_drive_id'] = extraer_id_drive(link_drive)
+                            st.session_state['subido_drive_nombre'] = nombre_safe
+                            st.session_state['subido_fila_historial'] = reg_res if isinstance(reg_res, int) else None
+                            st.session_state['subido_hoja_historial'] = hoja_hist_destino
+                            carpeta_dest_safe = carpeta_exacta or CARPETAS_DESTINO.get(empresa_firma, {}).get(tipo_flujo, '12PMJ1d-CSWo64m7aNQRQj2yGHFdp9B9S') if not es_modelo else '1LUErbILxjVHnzuHkdWaeAMI4HnLg1c7E'
+                            st.session_state['subido_carpeta_exacta'] = carpeta_dest_safe
+                            st.session_state['subido_tipo_flujo'] = tipo_flujo
+                            tipo_cod_safe = st.session_state.get('tipo_cod') or ("COM" if "comercializaci" in str(tipo_flujo).strip().lower() else "SER")
+                            destino_safe = st.session_state.get('destino_final') or (val_fundo if val_fundo and val_fundo != "NAN" else str(v_cli).strip().upper())
+                            st.session_state['subido_tipo_cod'] = tipo_cod_safe
+                            st.session_state['subido_v_corr'] = v_corr_real
+                            st.session_state['subido_destino_final'] = destino_safe
+                            st.session_state['subido_guias_lista'] = guias_lista if 'guias_lista' in locals() else ([str(v_guia).strip().upper()] if str(v_guia).strip() else [])
+                            
+                            # --- NUEVO: Actualizar bitácora del repositorio masivo si aplica ---
+                            if num_certificadas > 0:
+                                for g_str in guias_lista:
+                                    inyectar_estado_sheets_robusto(g_str)
+                            elif val_guia_completa:
+                                inyectar_estado_sheets_robusto(val_guia_completa)
+                            
+                            if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
+                                del st.session_state['guias_repo'] # Limpiar sesión
+                                
+                            st.markdown(f"📄 **Certificado Generado:** [Ver Documento en Drive]({link_drive})")
+                            
+                            st.cache_data.clear() 
+                        else:
+                            st.warning("⚠️ El registro se guardó en el Excel, pero Drive rechazó el archivo.")
+                    else:
+                        st.error("❌ Falló la conexión con Sheets.")
 
         # ====================================================================
         # --- SECCIÓN: JUNTAR EXPEDIENTE EN UN SOLO PDF ---
@@ -1805,7 +1909,17 @@ if modulo_actual == "📄 Generador de Certificados":
                         key="input_nombre_pdf_unido"
                     )
                     
-                    if st.button("🚀 Juntar Documentos y Guardar PDF Final", type="primary", key="btn_ejecutar_union"):
+                    ya_unido = bool(st.session_state.get('pdf_unido_link'))
+                    c_btn_u1, c_btn_u2 = st.columns([3, 1])
+                    with c_btn_u1:
+                        btn_ejecutar_union = st.button("✅ Expediente PDF Ya Unificado" if ya_unido else "🚀 Juntar Documentos y Guardar PDF Final", type="primary", disabled=ya_unido, key="btn_ejecutar_union")
+                    with c_btn_u2:
+                        if ya_unido and st.button("🔄 Nueva Unión", key="btn_reset_union"):
+                            for k in ['pdf_unido_link', 'pdf_unido_buffer', 'pdf_unido_nombre', 'res_sigersol_union']:
+                                st.session_state.pop(k, None)
+                            st.rerun()
+
+                    if btn_ejecutar_union:
                         with st.spinner("Descargando certificado editado de Drive y guías para unificarlas..."):
                             try:
                                 # 1. Descargar el Word editado de Drive
@@ -1848,6 +1962,32 @@ if modulo_actual == "📄 Generador de Certificados":
                                         link_doc=link_drive_actual,
                                         hoja_destino=hoja_hist_act
                                     )
+
+                                # 7. Sincronizar automáticamente cambios con SIGERSOL (por si el Word fue editado en Drive)
+                                try:
+                                    from src.services.sigersol_service import sincronizar_certificado_editado_a_sigersol
+                                    cert_union_hist = {
+                                        'correlativo': corr_c,
+                                        'empresa': st.session_state.get('subido_cliente') or str(st.session_state.get('v_cli', '')),
+                                        'ruc_cliente': st.session_state.get('subido_ruc_c') or str(st.session_state.get('v_ruc_c', '')),
+                                        'fecha': st.session_state.get('subido_fec_emis') or str(st.session_state.get('v_fec_emis', '')),
+                                        'fundo': dest_c,
+                                        'tipo_cert': t_flujo,
+                                        'hoja_historial': hoja_hist_act,
+                                        'guias': ", ".join(st.session_state.get('subido_guias_lista', [])) or str(st.session_state.get('v_guia', ''))
+                                    }
+                                    res_sig_u = sincronizar_certificado_editado_a_sigersol(
+                                        docx_bytes=doc_editado_bytes,
+                                        pdf_bytes=pdf_unido_bytes,
+                                        cert_historial=cert_union_hist
+                                    )
+                                    st.session_state['res_sigersol_union'] = res_sig_u
+                                    if res_sig_u.get('ok'):
+                                        acc_u = res_sig_u.get('accion', 'actualizaron')
+                                        st.toast(f"✅ Sigersol: Se {acc_u} {res_sig_u.get('filas_afectadas', 0)} fila(s) en '{res_sig_u.get('pestana', '')}'")
+                                except Exception as e_sig_u:
+                                    print(f"Aviso sincronización Sigersol en unión: {e_sig_u}")
+                                    st.session_state['res_sigersol_union'] = {"ok": False, "error": str(e_sig_u)}
                                 
                                 st.session_state['pdf_unido_buffer'] = pdf_unido_bytes
                                 st.session_state['pdf_unido_link'] = link_pdf_drive
@@ -1866,6 +2006,18 @@ if modulo_actual == "📄 Generador de Certificados":
                             mime="application/pdf",
                             key="btn_descarga_pdf_unido"
                         )
+                        res_sig_u = st.session_state.get('res_sigersol_union')
+                        if res_sig_u:
+                            if res_sig_u.get('ok'):
+                                acc_u = res_sig_u.get('accion', 'actualizaron')
+                                n_u = res_sig_u.get('filas_afectadas', 0)
+                                p_u = res_sig_u.get('pestana', '')
+                                if acc_u == 'sin_cambios':
+                                    st.info(f"🌐 **SIGERSOL:** Los registros correspondientes a este certificado ya estaban sincronizados en **`{p_u}`**.")
+                                else:
+                                    st.success(f"🌐 **SIGERSOL:** Se {acc_u} exitosamente **{n_u} registro(s)** en la pestaña **`{p_u}`** de Sigersol.")
+                            else:
+                                st.warning(f"⚠️ **SIGERSOL (Aviso):** No se pudo sincronizar automáticamente con Sigersol: {res_sig_u.get('error', 'Error desconocido')}")
             else:
                 st.info("Flujo finalizado. El certificado Word quedó registrado en Google Drive y Sheets.")
 
@@ -2066,7 +2218,18 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     key="input_motivo_edicion"
                 )
 
-            if st.button("🚀 Regenerar Expediente y Actualizar Historial", type="primary", use_container_width=True, key="btn_ejecutar_actualizacion_hist"):
+            ya_regenerado = bool(st.session_state.get('act_pdf_final_link'))
+            c_reg1, c_reg2 = st.columns([3, 1])
+            with c_reg1:
+                btn_ejecutar_act = st.button("✅ Expediente Ya Regenerado y Actualizado" if ya_regenerado else "🚀 Regenerar Expediente y Actualizar Historial", type="primary", disabled=ya_regenerado, use_container_width=True, key="btn_ejecutar_actualizacion_hist")
+            with c_reg2:
+                if ya_regenerado and st.button("🔄 Actualizar Otro", key="btn_reset_act_exp", use_container_width=True):
+                    for k in ['act_pdf_final_link', 'act_pdf_final_bytes', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_res_sigersol']:
+                        st.session_state.pop(k, None)
+                    st.cache_data.clear()
+                    st.rerun()
+
+            if btn_ejecutar_act:
                 doc_target = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
                 pdf_target = cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
                 if not pdf_target:
@@ -2077,13 +2240,22 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                             # 0. Limpiar caché inmediatamente
                             st.cache_data.clear()
 
-                            # 1. Obtener los bytes del nuevo certificado en PDF
+                            # 1. Obtener los bytes del nuevo certificado en PDF y Word
+                            docx_bytes_act = None
                             if subida_local_doc:
                                 nombre_subido = subida_local_doc.name.lower()
                                 if nombre_subido.endswith('.pdf'):
                                     nuevo_cert_pdf_bytes = subida_local_doc.getvalue()
+                                    if doc_target:
+                                        try:
+                                            d_io = descargar_archivo_drive_por_id_o_nombre(drv, doc_target)
+                                            if d_io:
+                                                docx_bytes_act = d_io.getvalue()
+                                        except Exception:
+                                            pass
                                 else:
-                                    nuevo_cert_pdf_bytes = convertir_docx_a_pdf(subida_local_doc.getvalue())
+                                    docx_bytes_act = subida_local_doc.getvalue()
+                                    nuevo_cert_pdf_bytes = convertir_docx_a_pdf(docx_bytes_act)
                                 st.toast("✅ Certificado cargado desde archivo local.")
                             else:
                                 if not doc_target:
@@ -2091,7 +2263,8 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 doc_drive_io = descargar_archivo_drive_por_id_o_nombre(drv, doc_target)
                                 if not doc_drive_io:
                                     raise Exception(f"No se pudo descargar el documento Word '{doc_target}' desde Google Drive.")
-                                nuevo_cert_pdf_bytes = convertir_docx_a_pdf(doc_drive_io.getvalue())
+                                docx_bytes_act = doc_drive_io.getvalue()
+                                nuevo_cert_pdf_bytes = convertir_docx_a_pdf(docx_bytes_act)
                                 st.toast("✅ Versión actualizada del Word descargada de Google Drive.")
 
                             if not nuevo_cert_pdf_bytes:
@@ -2138,6 +2311,22 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 hoja_destino=hoja_hist_edicion
                             )
 
+                            # 6. Sincronizar automáticamente cambios con SIGERSOL
+                            try:
+                                from src.services.sigersol_service import sincronizar_certificado_editado_a_sigersol
+                                res_sig_act = sincronizar_certificado_editado_a_sigersol(
+                                    docx_bytes=docx_bytes_act,
+                                    pdf_bytes=nuevo_cert_pdf_bytes,
+                                    cert_historial=cert_sel
+                                )
+                                st.session_state['act_res_sigersol'] = res_sig_act
+                                if res_sig_act.get('ok'):
+                                    accion_txt = res_sig_act.get('accion', 'actualizaron')
+                                    st.toast(f"✅ Sigersol: Se {accion_txt} {res_sig_act.get('filas_afectadas', 0)} fila(s) en '{res_sig_act.get('pestana', '')}'")
+                            except Exception as e_sig_act:
+                                print(f"Error sincronizando Sigersol al actualizar expediente: {e_sig_act}")
+                                st.session_state['act_res_sigersol'] = {"ok": False, "error": str(e_sig_act)}
+
                             st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes
                             st.session_state['act_pdf_final_link'] = link_para_historial
                             st.session_state['act_pdf_final_nombre'] = nombre_final_pdf
@@ -2158,6 +2347,19 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     mime="application/pdf",
                     key="btn_descarga_act_hist"
                 )
+                res_sig_act = st.session_state.get('act_res_sigersol')
+                if res_sig_act:
+                    if res_sig_act.get('ok'):
+                        accion_res = res_sig_act.get('accion', 'actualizaron')
+                        n_filas = res_sig_act.get('filas_afectadas', 0)
+                        p_nom = res_sig_act.get('pestana', '')
+                        if accion_res == 'sin_cambios':
+                            st.info(f"🌐 **SIGERSOL:** Los registros correspondientes a este certificado ya se encontraban actualizados en la pestaña **`{p_nom}`**.")
+                        else:
+                            st.success(f"🌐 **SIGERSOL:** Se {accion_res} exitosamente **{n_filas} fila(s)** en la pestaña **`{p_nom}`** de Sigersol.")
+                    else:
+                        st.warning(f"⚠️ **SIGERSOL (Aviso):** No se pudo sincronizar automáticamente con Sigersol: {res_sig_act.get('error', 'Error desconocido')}")
+
                 st.info("💡 **Nota sobre el visor web de Google Drive:** Si haces clic en 'Ver en Google Drive' y aún observas la versión anterior, se debe a la caché del visor de Google Drive. Puedes presionar **Ctrl + Shift + R** en el visor de Drive o descargar el archivo con el botón superior para comprobar los cambios de inmediato.")
                 if st.session_state.get('act_nuevo_cert_preview'):
                     with st.expander("🔍 Ver texto detectado en el nuevo certificado (Página 1)", expanded=True):
@@ -2180,20 +2382,59 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
         if pdf_expediente_file and nuevo_cert_file:
             nombre_descarga = pdf_expediente_file.name
-            if st.button("⚡ Sustituir Certificado y Generar PDF", type="primary", key="btn_swap_manual"):
+            ya_swap = bool(st.session_state.get('manual_swap_bytes'))
+            col_b1, col_b2 = st.columns([3, 1])
+            with col_b1:
+                btn_swap = st.button("✅ Expediente Ya Sustituido" if ya_swap else "⚡ Sustituir Certificado y Generar PDF", type="primary", disabled=ya_swap, key="btn_swap_manual")
+            with col_b2:
+                if ya_swap and st.button("🔄 Nuevo Ensamblado", key="btn_reset_swap_manual"):
+                    for k in ['manual_swap_bytes', 'manual_swap_name', 'manual_res_sigersol']:
+                        st.session_state.pop(k, None)
+                    st.rerun()
+
+            if btn_swap:
                 with st.spinner("Ensamblando nuevo expediente..."):
                     try:
+                        c_docx_bytes = None
                         if nuevo_cert_file.name.lower().endswith('.pdf'):
                             c_bytes = nuevo_cert_file.getvalue()
                         else:
-                            c_bytes = convertir_docx_a_pdf(nuevo_cert_file.getvalue())
+                            c_docx_bytes = nuevo_cert_file.getvalue()
+                            c_bytes = convertir_docx_a_pdf(c_docx_bytes)
 
                         pdf_res = sustituir_certificado_en_pdf(pdf_expediente_file.getvalue(), c_bytes, num_paginas_reemplazar=1)
                         st.session_state['manual_swap_bytes'] = pdf_res
                         st.session_state['manual_swap_name'] = nombre_descarga
+
+                        # Sincronización automática con Sigersol si se cargó Word o PDF
+                        try:
+                            from src.services.sigersol_service import sincronizar_certificado_editado_a_sigersol
+                            res_sig_man = sincronizar_certificado_editado_a_sigersol(
+                                docx_bytes=c_docx_bytes,
+                                pdf_bytes=c_bytes
+                            )
+                            st.session_state['manual_res_sigersol'] = res_sig_man
+                            if res_sig_man.get('ok'):
+                                st.toast(f"✅ Sigersol: {res_sig_man.get('accion')} {res_sig_man.get('filas_afectadas', 0)} fila(s)")
+                        except Exception as e_sm:
+                            print(f"Aviso Sigersol manual: {e_sm}")
+                            st.session_state['manual_res_sigersol'] = {"ok": False, "error": str(e_sm)}
+
                         st.success("✅ ¡Expediente ensamblado con éxito! La página 1 fue reemplazada y las guías se mantuvieron intactas.")
                     except Exception as err_m:
                         st.error(f"❌ Error procesando archivos: {err_m}")
+
+            if st.session_state.get('manual_swap_bytes'):
+                st.download_button(
+                    label=f"📩 Descargar {st.session_state.get('manual_swap_name', 'Expediente.pdf')}",
+                    data=st.session_state.get('manual_swap_bytes', b''),
+                    file_name=st.session_state.get('manual_swap_name', 'Expediente.pdf'),
+                    mime="application/pdf",
+                    key="btn_descarga_swap_manual"
+                )
+                res_sig_man = st.session_state.get('manual_res_sigersol')
+                if res_sig_man and res_sig_man.get('ok'):
+                    st.success(f"🌐 **SIGERSOL:** Se {res_sig_man.get('accion', 'actualizaron')} exitosamente **{res_sig_man.get('filas_afectadas', 0)} fila(s)** en la pestaña **`{res_sig_man.get('pestana', '')}`**.")
 
             if st.session_state.get('manual_swap_bytes'):
                 st.download_button(

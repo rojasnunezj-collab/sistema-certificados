@@ -384,7 +384,14 @@ def render_sigersol():
             pestana = f"COM-{emp_clean}" if tipo_op == "Comercialización" else f"SERV-{emp_clean}"
             st.markdown(f"- `{pestana}`")
         
-        if st.button("🚀 Migrar a Sigersol", type="primary", use_container_width=True):
+        # Control de selección y bloqueo tras migrar
+        sel_tuple = tuple(filas_a_migrar['_excel_row_idx'].tolist()) if '_excel_row_idx' in filas_a_migrar.columns else tuple(filas_a_migrar.index.tolist())
+        if st.session_state.get('sigersol_prev_sel') != sel_tuple:
+            st.session_state['sigersol_prev_sel'] = sel_tuple
+            st.session_state['sigersol_migrado_exito'] = False
+
+        ya_migrado_sig = bool(st.session_state.get('sigersol_migrado_exito', False))
+        if st.button("✅ Datos Ya Migrados a Sigersol" if ya_migrado_sig else "🚀 Migrar a Sigersol", type="primary", disabled=ya_migrado_sig, use_container_width=True, key="btn_migrar_sigersol_modulo"):
             with st.spinner(f"Migrando {len(filas_a_migrar)} registros a SUNAT..."):
                 exito_global = True
                 filas_exitosas = []
@@ -403,12 +410,14 @@ def render_sigersol():
                 if filas_exitosas:
                     exito_update = actualizar_sigersol_origen(filas_exitosas)
                     if exito_update:
+                        st.session_state['sigersol_migrado_exito'] = True
                         if exito_global:
                             st.success(f"✅ ¡Éxito! Se migraron todas las guías a sus respectivas pestañas.")
                             st.balloons()
                         else:
                             st.warning("⚠️ Se migraron algunas guías, pero hubo errores con otras.")
                         st.cache_data.clear()
+                        st.rerun()
                     else:
                         st.warning("Se migraron a SUNAT, pero falló la actualización del check en la hoja de origen.")
                 elif not exito_global:
