@@ -95,7 +95,12 @@ def clasificar_basilea(descripcion: str, tipo_flujo: str = "", tipo_residuo: str
     else:
         return ("RSMNM", False)
 
-from src.utils.format_utils import limpiar_monto
+from src.utils.format_utils import (
+    limpiar_monto,
+    limpiar_guia_o_factura,
+    normalizar_fecha,
+    limpiar_descripcion
+)
 
 def limpiar_peso_a_toneladas(peso_val) -> float:
     """Convierte peso (en Kg) a Toneladas dividiendo entre 1000."""
