@@ -25,7 +25,8 @@ try:
         convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
         sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
         obtener_info_revision_documento_drive,
-        obtener_configuracion_empresas, buscar_config_empresa
+        obtener_configuracion_empresas, buscar_config_empresa,
+        obtener_sheet_sigersol_destino, obtener_carpeta_guias, guardar_guia_en_drive
     )
 except ImportError as err_import:
     import traceback
@@ -344,6 +345,51 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.cache_data.clear()
                     st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
 
+        # --- SECCIÓN: Carga Directa de Guías a Google Drive ---
+        st.divider()
+        with st.expander("📁 Almacén de Guías en Drive", expanded=False):
+            st.caption("Guarda guías (Hechas o Recibidas) en sus respectivas carpetas de Google Drive por empresa.")
+            empresas_disponibles_guias = [
+                "TRANSPORT & SERVICE ALHUAY S.A.C.",
+                "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.",
+                "EPMI S.A.C.",
+                "INECOVE S.A.C."
+            ]
+            emp_sel_guias = st.selectbox("Empresa:", options=empresas_disponibles_guias, key="sb_emp_guias_directa")
+            tipo_sel_guias = st.radio("Tipo de Guías:", ["Guías Recibidas", "Guías Hechas"], horizontal=True, key="sb_tipo_guias_directa")
+            tipo_k_guias = "recibidas" if "recib" in tipo_sel_guias.lower() else "hechas"
+
+            cid_act = obtener_carpeta_guias(emp_sel_guias, tipo_k_guias)
+            if cid_act:
+                link_gdrive = f"https://drive.google.com/drive/folders/{cid_act}"
+                st.markdown(f"📂 [Abrir carpeta en Drive]({link_gdrive})")
+            else:
+                st.info("ℹ️ Sin carpeta configurada para esta empresa.")
+
+            archivos_guias_directas = st.file_uploader(
+                "Subir archivos de guías:",
+                type=["pdf", "jpg", "jpeg", "png"],
+                accept_multiple_files=True,
+                key="sb_uploader_guias_directas"
+            )
+            if archivos_guias_directas and st.button("📤 Guardar en Drive", use_container_width=True, key="sb_btn_guardar_guias_drive"):
+                cont_ok = 0
+                for f_g in archivos_guias_directas:
+                    r_up = guardar_guia_en_drive(
+                        f_g.getvalue(),
+                        f_g.name,
+                        empresa_nombre=emp_sel_guias,
+                        tipo_guia=tipo_k_guias
+                    )
+                    if r_up and r_up.get('ok'):
+                        cont_ok += 1
+                        st.success(f"✅ {f_g.name}: [Ver en Drive]({r_up.get('link')})")
+                    else:
+                        err_d = r_up.get('error', 'Error desconocido') if r_up else 'No se pudo subir'
+                        st.error(f"❌ {f_g.name}: {err_d}")
+                if cont_ok > 0:
+                    st.toast(f"✅ Se guardaron {cont_ok} archivo(s) en Google Drive")
+
 if modulo_actual == "📄 Generador de Certificados":
 
     # ====================================================================
@@ -423,6 +469,8 @@ if modulo_actual == "📄 Generador de Certificados":
         if not repositorio_masivo:
             # Verifica que tu línea sea así (usa uploader_key):
             archivos = st.file_uploader("Sube tus guías", type=["pdf"], accept_multiple_files=True, key=f"uploader_{st.session_state.get('uploader_key', 0)}")
+            if archivos:
+                st.session_state['archivos_subidos_dict'] = {arc.name: arc.getvalue() for arc in archivos}
         else:
             archivos = st.session_state.get('archivos_mock', None)
 
@@ -446,7 +494,10 @@ if modulo_actual == "📄 Generador de Certificados":
                 st.session_state['total_pdfs_leidos'] = total
                 
                 for i, arc in enumerate(archivos):
-                    d = procesar_guia_ia_vertex(arc.read())
+                    arc_bytes = arc.getvalue() if hasattr(arc, 'getvalue') else arc.read()
+                    if hasattr(arc, 'seek'):
+                        arc.seek(0)
+                    d = procesar_guia_ia_vertex(arc_bytes)
                     if d:
                         if not grl: grl = d 
                         s, f, p = d.get('serie','S/N'), d.get('fecha',''), d.get('vehiculo','')
@@ -1522,6 +1573,25 @@ if modulo_actual == "📄 Generador de Certificados":
                                 if link_drive:
                                     st.markdown(f"📄 **Certificado Generado:** [Ver Documento]({link_drive})")
                                     inyectar_estado_sheets_robusto(str(archivo).upper())
+
+                                # Respaldo automático de la guía recibida en la carpeta de Drive de la empresa
+                                try:
+                                    arc_dict = st.session_state.get('archivos_subidos_dict', {})
+                                    nom_arc_match = next((k for k in arc_dict.keys() if str(archivo).upper() in k.upper() or k.upper() in str(archivo).upper()), None)
+                                    guia_bytes = arc_dict.get(nom_arc_match) if nom_arc_match else (arc_dict.get(archivo) if archivo in arc_dict else None)
+                                    if guia_bytes and not es_modelo:
+                                        res_g = guardar_guia_en_drive(
+                                            guia_bytes, 
+                                            nom_arc_match or (archivo if str(archivo).lower().endswith('.pdf') else f"{archivo}.pdf"), 
+                                            empresa_nombre=empresa_firma, 
+                                            tipo_guia="recibidas"
+                                        )
+                                        if res_g and res_g.get('ok'):
+                                            st.toast(f"📥 Guía respaldada en Drive ({empresa_firma})")
+                                        elif res_g and res_g.get('error'):
+                                            print(f"Aviso respaldo guía Drive: {res_g.get('error')}")
+                                except Exception as e_guia_up:
+                                    print(f"Aviso respaldo automático guía: {e_guia_up}")
                                 
                             except Exception as e:
                                 fallidos.append((archivo, str(e)))
@@ -1838,6 +1908,24 @@ if modulo_actual == "📄 Generador de Certificados":
                                     inyectar_estado_sheets_robusto(g_str)
                             elif val_guia_completa:
                                 inyectar_estado_sheets_robusto(val_guia_completa)
+
+                            # Respaldo automático de guías recibidas en Drive si fueron cargadas localmente
+                            try:
+                                subidos_dict = st.session_state.get('archivos_subidos_dict', {})
+                                if subidos_dict and not es_modelo and not locals().get('repositorio_masivo', False):
+                                    for g_nom, g_bytes in subidos_dict.items():
+                                        res_g = guardar_guia_en_drive(
+                                            g_bytes,
+                                            g_nom,
+                                            empresa_nombre=empresa_firma,
+                                            tipo_guia="recibidas"
+                                        )
+                                        if res_g and res_g.get('ok'):
+                                            st.toast(f"📥 Guía recibida respaldada en Drive: {g_nom}")
+                                        elif res_g and res_g.get('error'):
+                                            print(f"Aviso respaldo guía Drive: {res_g.get('error')}")
+                            except Exception as e_guia_b:
+                                print(f"Aviso respaldo guías recibidas: {e_guia_b}")
                             
                             if locals().get('repositorio_masivo', False) and 'guias_repo' in st.session_state:
                                 del st.session_state['guias_repo'] # Limpiar sesión

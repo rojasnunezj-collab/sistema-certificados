@@ -24,6 +24,26 @@ SHEETS_SIGERSOL = {
     "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": os.getenv("ID_SHEET_SIGERSOL_PP", "1W7Exc6knTkmzckbHeqw-J9KCitrga-Mc35S9kGd7gWk")
 }
 
+# Carpetas de Google Drive para Guías (Hechas y Recibidas) por Empresa
+CARPETAS_GUIAS = {
+    "EPMI S.A.C.": {
+        "hechas": os.getenv("CARPETA_GUIAS_HECHAS_EPMI", ""),
+        "recibidas": os.getenv("CARPETA_GUIAS_RECIBIDAS_EPMI", "")
+    },
+    "INECOVE S.A.C.": {
+        "hechas": os.getenv("CARPETA_GUIAS_HECHAS_INECOVE", ""),
+        "recibidas": os.getenv("CARPETA_GUIAS_RECIBIDAS_INECOVE", "")
+    },
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": {
+        "hechas": os.getenv("CARPETA_GUIAS_HECHAS_ALHUAY", "1iYLDP6DE4e5bPCtpJ4Bgb16XKVvT4yCk"),
+        "recibidas": os.getenv("CARPETA_GUIAS_RECIBIDAS_ALHUAY", "1WSyZhKo7XqcHu-Zq4emkEhGTQ63EYEBp")
+    },
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
+        "hechas": os.getenv("CARPETA_GUIAS_HECHAS_PP", "1R_4asjtOQG3Bxgbtx1SJjWYnNQBweovM"),
+        "recibidas": os.getenv("CARPETA_GUIAS_RECIBIDAS_PP", "1vPvVcNHb52rq7xi-nMK0_dkG10YaOTB9")
+    }
+}
+
 # Hojas especializadas en Google Sheets para Petramás
 SHEET_CERTIFICADOS_PETRAMAS = "Certificados_Petramas"
 SHEET_SUSTENTOS_CAMPO = "Sustentos_Campo"
