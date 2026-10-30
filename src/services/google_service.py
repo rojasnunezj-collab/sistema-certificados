@@ -393,6 +393,7 @@ def obtener_configuracion_empresas():
 
             carpetas = {}
             plantillas = {}
+            id_sheet_sigersol = ""
 
             for col in df.columns:
                 col_clean = str(col).strip().upper()
@@ -426,12 +427,17 @@ def obtener_configuracion_empresas():
                         plantillas['Disposición Final 2'] = clean_id
                     else:
                         plantillas[op_key.capitalize()] = clean_id
+                elif 'SIGERSOL' in col_clean:
+                    id_sheet_sigersol = clean_id
 
             # Fallbacks desde settings.py si la empresa no tuvo plantilla o carpeta en el Sheet
             if not carpetas and emp_nombre in CARPETAS_DESTINO:
                 carpetas = dict(CARPETAS_DESTINO[emp_nombre])
             if not plantillas and emp_nombre in PLANTILLAS:
                 plantillas = dict(PLANTILLAS[emp_nombre])
+            if not id_sheet_sigersol:
+                from src.config.settings import SHEETS_SIGERSOL, ID_SHEET_SIGERSOL
+                id_sheet_sigersol = SHEETS_SIGERSOL.get(emp_nombre, ID_SHEET_SIGERSOL)
 
             # Los servicios ofertados dependen estrictamente de las plantillas existentes.
             # Si solo tiene una plantilla, solo saldrá esa plantilla. Si tiene más, saldrán todas.
@@ -448,7 +454,8 @@ def obtener_configuracion_empresas():
                 'hoja_historial': hoja_hist,
                 'carpetas': carpetas,
                 'plantillas': plantillas,
-                'servicios': servicios
+                'servicios': servicios,
+                'id_sheet_sigersol': id_sheet_sigersol
             }
 
         return config_empresas
@@ -478,6 +485,51 @@ def buscar_config_empresa(empresa_nombre, config_empresas=None):
             
     # 3. Fallback al primero o a un dict por defecto
     return next(iter(config_empresas.values())) if config_empresas else {}
+
+def obtener_sheet_sigersol_destino(emisor_nombre=None, cliente_nombre=None) -> str:
+    """
+    Resuelve el ID de Google Sheet de destino para SIGERSOL.
+    Prioridad:
+    1. Si el cliente tiene un sheet configurado en la pestaña 'CLIENTES' (columna SIGERSOL)
+    2. Si la empresa emisora tiene un sheet configurado en la pestaña 'EMPRESAS' (columna SIGERSOL)
+    3. Mapeo fallback en settings.py (SHEETS_SIGERSOL)
+    4. Fallback global ID_SHEET_SIGERSOL
+    """
+    from src.config.settings import ID_SHEET_SIGERSOL, SHEETS_SIGERSOL
+
+    # 1. Verificar si en la pestaña CLIENTES existe una columna SIGERSOL
+    if cliente_nombre:
+        try:
+            df_clientes = leer_sheet_seguro("CLIENTES")
+            if not df_clientes.empty and 'EMPRESA' in df_clientes.columns:
+                col_sig = next((c for c in df_clientes.columns if 'SIGERSOL' in str(c).upper()), None)
+                if col_sig:
+                    cli_target = str(cliente_nombre).strip().upper()
+                    for _, r in df_clientes.iterrows():
+                        r_emp = str(r.get('EMPRESA', '')).strip().upper()
+                        if r_emp == cli_target or (r_emp and (r_emp in cli_target or cli_target in r_emp)):
+                            v_link = str(r.get(col_sig, '')).strip()
+                            if v_link and v_link.lower() != 'nan':
+                                cid = extraer_id_drive(v_link)
+                                if cid:
+                                    return cid
+        except Exception as e:
+            print(f"[Aviso] No se pudo leer SIGERSOL desde pestaña CLIENTES: {e}")
+
+    # 2. Verificar configuración de empresa emisora
+    if emisor_nombre:
+        cfg = buscar_config_empresa(emisor_nombre)
+        if cfg and cfg.get('id_sheet_sigersol'):
+            return cfg['id_sheet_sigersol']
+        
+        # Búsqueda en SHEETS_SIGERSOL con normalización
+        em_upper = str(emisor_nombre).strip().upper()
+        for k_emp, sid in SHEETS_SIGERSOL.items():
+            k_upper = k_emp.upper()
+            if k_upper in em_upper or em_upper in k_upper or any(token in em_upper for token in k_upper.split() if len(token) > 3):
+                return sid
+
+    return ID_SHEET_SIGERSOL
 
 @st.cache_data(ttl=600)
 def obtener_datos_empresas_desde_sheets():

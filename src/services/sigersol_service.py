@@ -340,7 +340,8 @@ def migrar_datos_certificado_a_sigersol(
     tipo_flujo: str,
     emisor_info: dict = None,
     actualizar_si_existe: bool = True,
-    guias_anteriores: list = None
+    guias_anteriores: list = None,
+    spreadsheet_id: str = None
 ) -> dict:
     """
     Migra las filas de residuos de la tabla del certificado hacia el Google Sheet de Sigersol (3 trimestre).
@@ -349,7 +350,10 @@ def migrar_datos_certificado_a_sigersol(
     - df_items: DataFrame con las filas de la tabla interactiva (fecha_origen, desc, cant, peso, etc.)
     - cabecera: Diccionario con datos del certificado (fecha, cliente, ruc_cliente, partida, guia, placa, etc.)
     - tipo_flujo: 'Comercialización' o 'Disposición Final / Servicio'
-    - emisor_info: Diccionario con datos de la empresa emisora (nombre, ruc, registro)
+    - emisor_info: Diccionario con datos de la empresa emisora (nombre, ruc, registro, id_sheet_sigersol)
+    - actualizar_si_existe: bool
+    - guias_anteriores: list
+    - spreadsheet_id: ID específico del Google Sheet destino de Sigersol (opcional)
     
     Retorna:
     - dict con {'ok': bool, 'filas_insertadas': int, 'pestana': str, 'error': str|None}
@@ -364,7 +368,18 @@ def migrar_datos_certificado_a_sigersol(
         if not sheets_api:
             return {"ok": False, "filas_insertadas": 0, "pestana": "", "error": "No se pudo autenticar con Google Sheets"}
 
-        spreadsheet_id = ID_SHEET_SIGERSOL
+        # Resolver ID dinámico de destino para Sigersol
+        if not spreadsheet_id:
+            if emisor_info.get('id_sheet_sigersol'):
+                spreadsheet_id = emisor_info['id_sheet_sigersol']
+            else:
+                from src.services.google_service import obtener_sheet_sigersol_destino
+                em_nom = emisor_info.get('nombre')
+                cli_nom = cabecera.get('cliente') if cabecera else None
+                spreadsheet_id = obtener_sheet_sigersol_destino(emisor_nombre=em_nom, cliente_nombre=cli_nom)
+
+        if not spreadsheet_id:
+            spreadsheet_id = ID_SHEET_SIGERSOL
 
         # 1. Determinar Fecha Representativa y Trimestre
         fecha_repr = str(cabecera.get('fecha', '')).strip()
@@ -677,7 +692,8 @@ def sincronizar_certificado_editado_a_sigersol(
     pdf_bytes: bytes = None,
     cert_historial: dict = None,
     df_items_override: pd.DataFrame = None,
-    cabecera_override: dict = None
+    cabecera_override: dict = None,
+    spreadsheet_id: str = None
 ) -> dict:
     """
     Sincroniza un certificado o expediente que fue editado/modificado hacia el Google Sheet de Sigersol.
@@ -759,7 +775,8 @@ def sincronizar_certificado_editado_a_sigersol(
     emisor_info = {
         "nombre": cfg_emisor.get('nombre', ''),
         "ruc": cfg_emisor.get('ruc', ''),
-        "registro": cfg_emisor.get('registro', '')
+        "registro": cfg_emisor.get('registro', ''),
+        "id_sheet_sigersol": cfg_emisor.get('id_sheet_sigersol', '')
     }
 
     # 4. Obtener lista de guías anteriores para localización
@@ -773,5 +790,6 @@ def sincronizar_certificado_editado_a_sigersol(
         tipo_flujo=tipo_flujo,
         emisor_info=emisor_info,
         actualizar_si_existe=True,
-        guias_anteriores=guias_anteriores
+        guias_anteriores=guias_anteriores,
+        spreadsheet_id=spreadsheet_id or emisor_info.get('id_sheet_sigersol')
     )

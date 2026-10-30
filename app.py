@@ -1506,7 +1506,8 @@ if modulo_actual == "📄 Generador de Certificados":
                                     emisor_sig = {
                                         "nombre": emisor_nombre,
                                         "ruc": emisor_ruc,
-                                        "registro": emisor_reg
+                                        "registro": emisor_reg,
+                                        "id_sheet_sigersol": cfg_emisor.get('id_sheet_sigersol') if 'cfg_emisor' in locals() and cfg_emisor else None
                                     }
                                     res_sig = migrar_datos_certificado_a_sigersol(df_filtrado, cab_sig, tipo_flujo, emisor_sig)
                                     if res_sig.get('ok'):
@@ -1671,7 +1672,8 @@ if modulo_actual == "📄 Generador de Certificados":
                         emisor_sig = {
                             "nombre": emisor_nombre,
                             "ruc": emisor_ruc,
-                            "registro": emisor_reg
+                            "registro": emisor_reg,
+                            "id_sheet_sigersol": cfg_emisor.get('id_sheet_sigersol') if 'cfg_emisor' in locals() and cfg_emisor else None
                         }
                         res_sig = migrar_datos_certificado_a_sigersol(
                             df_items=v_items_df,

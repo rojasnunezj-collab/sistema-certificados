@@ -60,10 +60,11 @@ def actualizar_sigersol_origen(filas_excel_idx):
         st.error(f"Error actualizando origen: {e}")
         return False
 
-def asegurar_pestana_destino(sheets, nombre_pestana):
+def asegurar_pestana_destino(sheets, nombre_pestana, spreadsheet_id=None):
+    target_id = spreadsheet_id or ID_DESTINO_SUNAT
     try:
         # Obtenemos metadata del spreadsheet destino
-        meta = sheets.spreadsheets().get(spreadsheetId=ID_DESTINO_SUNAT).execute()
+        meta = sheets.spreadsheets().get(spreadsheetId=target_id).execute()
         pestanas_existentes = [s['properties']['title'] for s in meta.get('sheets', [])]
         
         # Check existencias ignorando espacios y mayusculas
@@ -85,7 +86,7 @@ def asegurar_pestana_destino(sheets, nombre_pestana):
                 }
             ]
         }
-        sheets.spreadsheets().batchUpdate(spreadsheetId=ID_DESTINO_SUNAT, body=req).execute()
+        sheets.spreadsheets().batchUpdate(spreadsheetId=target_id, body=req).execute()
         
         # Inicializar headers si es nueva
         headers = [
@@ -93,7 +94,7 @@ def asegurar_pestana_destino(sheets, nombre_pestana):
              "N° GUIA", "", "DESCRIPCION DE RESIDUOS", "", "", "", "CANTIDAD (Tn)", "", "DESTINO FINAL"]
         ]
         sheets.spreadsheets().values().update(
-            spreadsheetId=ID_DESTINO_SUNAT,
+            spreadsheetId=target_id,
             range=f"'{nombre_pestana}'!A1:O1",
             valueInputOption="USER_ENTERED",
             body={"values": headers}
@@ -107,11 +108,12 @@ def asegurar_pestana_destino(sheets, nombre_pestana):
             st.error(f"Error al verificar/crear pestaña '{nombre_pestana}' en destino: {e}")
         return False
 
-def migrar_a_sunat(df_seleccionados, nombre_pestana):
+def migrar_a_sunat(df_seleccionados, nombre_pestana, spreadsheet_id=None):
+    target_id = spreadsheet_id or ID_DESTINO_SUNAT
     _, sheets = obtener_servicios()
     if not sheets: return False
     
-    nombre_pestana_real = asegurar_pestana_destino(sheets, nombre_pestana)
+    nombre_pestana_real = asegurar_pestana_destino(sheets, nombre_pestana, spreadsheet_id=target_id)
     if not nombre_pestana_real:
         return False
         
@@ -153,12 +155,12 @@ def migrar_a_sunat(df_seleccionados, nombre_pestana):
             
         if valores_a_insertar:
             # Encontrar la primera fila vacía leyendo la columna B (Fecha)
-            r = sheets.spreadsheets().values().get(spreadsheetId=ID_DESTINO_SUNAT, range=f"'{nombre_pestana_real}'!B:B").execute()
+            r = sheets.spreadsheets().values().get(spreadsheetId=target_id, range=f"'{nombre_pestana_real}'!B:B").execute()
             next_row = len(r.get('values', [])) + 1
             if next_row < 2: next_row = 2
             
             sheets.spreadsheets().values().update(
-                spreadsheetId=ID_DESTINO_SUNAT,
+                spreadsheetId=target_id,
                 range=f"'{nombre_pestana_real}'!A{next_row}",
                 valueInputOption="USER_ENTERED",
                 body={"values": valores_a_insertar}
@@ -392,6 +394,8 @@ def render_sigersol():
 
         ya_migrado_sig = bool(st.session_state.get('sigersol_migrado_exito', False))
         if st.button("✅ Datos Ya Migrados a Sigersol" if ya_migrado_sig else "🚀 Migrar a Sigersol", type="primary", disabled=ya_migrado_sig, use_container_width=True, key="btn_migrar_sigersol_modulo"):
+            from src.services.google_service import obtener_sheet_sigersol_destino
+            sid_destino = obtener_sheet_sigersol_destino(emisor_nombre=empresa_sel if empresa_sel != "Todas" else None)
             with st.spinner(f"Migrando {len(filas_a_migrar)} registros a SUNAT..."):
                 exito_global = True
                 filas_exitosas = []
@@ -401,7 +405,7 @@ def render_sigersol():
                     emp_clean = limpiar_razon_social(remitente) if remitente else "VARIOS"
                     nombre_pestana = f"COM-{emp_clean}" if tipo_op == "Comercialización" else f"SERV-{emp_clean}"
                     
-                    if migrar_a_sunat(df_grupo, nombre_pestana):
+                    if migrar_a_sunat(df_grupo, nombre_pestana, spreadsheet_id=sid_destino):
                         filas_exitosas.extend(df_grupo['_excel_row_idx'].tolist())
                     else:
                         exito_global = False

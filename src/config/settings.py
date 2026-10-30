@@ -16,6 +16,14 @@ ID_SHEET_CONTROL = "14As5bCpZi56V5Nq1DRs0xl6R1LuOXLvRRoV26nI50NU"
 ID_SHEET_SIGERSOL = os.getenv("ID_SHEET_SIGERSOL", "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
 ID_SHEET_PETRAMAS = os.getenv("ID_SHEET_PETRAMAS", ID_SHEET_CONTROL)
 
+# Mapeo de Google Sheets de Destino para SIGERSOL por Empresa
+SHEETS_SIGERSOL = {
+    "EPMI S.A.C.": os.getenv("ID_SHEET_SIGERSOL_EPMI", ID_SHEET_SIGERSOL),
+    "INECOVE S.A.C.": os.getenv("ID_SHEET_SIGERSOL_INECOVE", ID_SHEET_SIGERSOL),
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": os.getenv("ID_SHEET_SIGERSOL_ALHUAY", "1n-MhXvCAPDSc4Rj1azoM40f5bjTvoXyiTi9mn_CNgL8"),
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": os.getenv("ID_SHEET_SIGERSOL_PP", "1W7Exc6knTkmzckbHeqw-J9KCitrga-Mc35S9kGd7gWk")
+}
+
 # Hojas especializadas en Google Sheets para Petramás
 SHEET_CERTIFICADOS_PETRAMAS = "Certificados_Petramas"
 SHEET_SUSTENTOS_CAMPO = "Sustentos_Campo"
@@ -62,6 +70,12 @@ EMPRESAS_EORS = {
         "hoja_historial": "Historial_ALHUAY",
         "prefijo_cert": "CERT-SER",
         "alias": ["ALHUAY", "TRANSPORT & SERVICE ALHUAY", "TRANSPORT & SERVICE ALHUAY S.A.C."]
+    },
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
+        "ruc": "20608439146",
+        "hoja_historial": "Historial_P&P",
+        "prefijo_cert": "CERT-SER",
+        "alias": ["P&P", "P&P INVERSIONES", "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C."]
     }
 }
 
@@ -79,6 +93,9 @@ CARPETAS_DESTINO = {
     "TRANSPORT & SERVICE ALHUAY S.A.C.": {
         "Comercialización": "1i44hDtMx7kHm_2g1UyXeNo9cdMw_XSks",
         "Disposición Final 1": "1F4NVyV7_EISPYu2eHMWeFcd7ChWEKe7o"
+    },
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
+        "Comercialización": "17Sbpo1NfzCuIqBqwB8kZpyo-ygP2bzsg"
     }
 }
 
@@ -98,6 +115,9 @@ PLANTILLAS = {
     },
     "TRANSPORT & SERVICE ALHUAY S.A.C.": {
         "Disposición Final 1": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM"
+    },
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
+        "Comercialización": "1MCH_wSNmodmojvLlw8yM2lgFa2zBjd5x"
     }
 }
 
