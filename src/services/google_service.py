@@ -14,14 +14,23 @@ from src.config.settings import ID_SHEET_CONTROL, ID_SHEET_REPOSITORIO
 # ====================================================================
 @st.cache_data(show_spinner=False, ttl=600)
 def leer_sheet_seguro(pestaña):
-    """Lectura segura de Google Sheets con cacheo parcial"""
+    """Lectura segura de Google Sheets con cacheo parcial y normalización robusta de columnas"""
     _, s = obtener_servicios()
     if not s: return pd.DataFrame()
     try:
         r = s.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{pestaña}'!A1:Z1000").execute()
         v = r.get('values', [])
-        if not v: return pd.DataFrame()
-        return pd.DataFrame(v[1:], columns=v[0])
+        if not v or len(v) == 0: return pd.DataFrame()
+        headers = [str(c).strip() for c in v[0]]
+        num_cols = len(headers)
+        if num_cols == 0: return pd.DataFrame()
+        
+        # Normalizar cada fila al número exacto de columnas de la cabecera
+        filas = [
+            row + [''] * (num_cols - len(row)) if len(row) < num_cols else row[:num_cols]
+            for row in v[1:]
+        ]
+        return pd.DataFrame(filas, columns=headers)
     except Exception as e:
         st.error(f"Error leyendo pestaña {pestaña}: {e}")
         return pd.DataFrame()
@@ -54,13 +63,17 @@ def obtener_servicios():
 
     # 1. Intentar cargar cuenta de servicio desde Streamlit Secrets (NUBE) - ¡Prioridad #2!
     try:
-        if not creds and "google" in st.secrets:
-            info = dict(st.secrets["google"])
-            # Auto-corrección de formato por si acaso
-            for k, v in info.items():
-                if isinstance(v, str):
-                    info[k] = v.replace("https=//", "https://")
-            creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+        if not creds:
+            for s_key in ["google", "gcp_service_account", "google_service_account", "service_account"]:
+                if s_key in st.secrets:
+                    info = dict(st.secrets[s_key])
+                    # Auto-corrección de formato por si acaso
+                    for k, v in info.items():
+                        if isinstance(v, str):
+                            info[k] = v.replace("https=//", "https://")
+                    creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
+                    if creds:
+                        break
     except Exception:
         pass
 
@@ -69,7 +82,14 @@ def obtener_servicios():
         base_app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # Primero buscar token.json local (prioridad local anti-cuota)
-        token_candidates = ["token.json", os.path.join(base_app_dir, "token.json")]
+        token_candidates = [
+            "token.json", 
+            os.path.join(base_app_dir, "token.json"),
+            os.path.join(os.path.dirname(os.path.dirname(base_app_dir)), "BotGestion", "Bot_lia_guias_notas", "token.json"),
+            os.path.join(os.path.dirname(os.path.dirname(base_app_dir)), "SistemaPostmortem", "token.json"),
+            os.path.join(os.path.dirname(base_app_dir), "BotGestion", "Bot_lia_guias_notas", "token.json"),
+            os.path.join(os.path.dirname(base_app_dir), "SistemaPostmortem", "token.json")
+        ]
         token_file = next((p for p in token_candidates if os.path.exists(p)), None)
         if token_file:
             try:
@@ -936,6 +956,85 @@ def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
         print(f"Error obteniendo link Drive para {nombre_archivo}: {e}")
     return None
 
+def descomponer_guia_para_match(texto):
+    """
+    Descompone un texto o código de guía extrayendo variantes canónicas:
+    serie-correlativo, seriecorrelativo, correlativo limpio, etc.
+    Soporta formatos tipo TR16-Nº 0006306, TR16-6306, EG03-00000494, 1002-2859, etc.
+    """
+    import re
+    if not texto:
+        return set()
+    s = str(texto).strip().upper()
+    if s in ['NONE', 'NAN', 'S/N', 'SIN GUIA', '-']:
+        return set()
+    
+    # Limpiar prefijos de tipo de documento
+    s = re.sub(r'(?i)\b(GUIA|GU[IÍ]A|GUA|REMISI[OÓ]N|TRANSPORTE|TRANSPORTISTA|REMITENTE)\b', ' ', s)
+    # Limpiar prefijos de número tipo N°, Nº, Nro, No., etc.
+    s = re.sub(r'(?i)\bN[º°oO\.\#\:]*\s*', ' ', s)
+    s = re.sub(r'[º°\#]', ' ', s)
+    
+    variantes = set()
+    
+    # 1. Separar por guión, barra, espacio o subguión
+    partes = [p.strip() for p in re.split(r'[-\s/_]+', s) if p.strip()]
+    if len(partes) >= 2:
+        serie_raw = partes[0]
+        corr_raw = partes[-1]
+        
+        # Normalizar serie (ej: TR016 -> TR16 y TR016; EG03 -> EG3 y EG03)
+        m_serie = re.match(r'^([A-Z]*)(\d*)$', serie_raw)
+        if m_serie:
+            letras, num_s = m_serie.groups()
+            num_s_clean = num_s.lstrip('0')
+            serie_norm1 = f"{letras}{num_s_clean}"
+            serie_norm2 = f"{letras}{num_s}"
+        else:
+            serie_norm1 = serie_raw
+            serie_norm2 = serie_raw
+            
+        corr_clean = corr_raw.lstrip('0') or "0"
+            
+        variantes.add(f"{serie_norm1}-{corr_clean}")
+        variantes.add(f"{serie_norm1}{corr_clean}")
+        variantes.add(f"{serie_norm2}-{corr_clean}")
+        variantes.add(f"{serie_norm2}{corr_clean}")
+        variantes.add(f"{serie_norm1}-{corr_raw}")
+        variantes.add(f"{serie_norm1}{corr_raw}")
+        if len(corr_clean) >= 4:
+            variantes.add(corr_clean)
+    else:
+        m = re.match(r'^([A-Z]+)(\d+)$', s)
+        if m:
+            letras, numeros = m.groups()
+            variantes.add(f"{letras}{numeros.lstrip('0')}")
+            variantes.add(s)
+        else:
+            t = re.sub(r'[^A-Z0-9]', '', s)
+            if t:
+                variantes.add(t)
+                
+    return variantes
+
+def coinciden_guias_expediente(guia_buscada, guia_candidata):
+    """Compara si dos guías coinciden de forma estricta y segura, evitando falsos positivos."""
+    if not guia_buscada or not guia_candidata:
+        return False
+    g_c_str = str(guia_candidata).strip().upper()
+    if not g_c_str or g_c_str in ['NONE', 'NAN', 'S/N', 'SIN GUIA', '-']:
+        return False
+        
+    v_busc = descomponer_guia_para_match(guia_buscada)
+    v_cand = descomponer_guia_para_match(guia_candidata)
+    if not v_busc or not v_cand:
+        return False
+        
+    inter = v_busc.intersection(v_cand)
+    # Evitar matches espurios de solo números muy cortos (menores a 4 dígitos)
+    inter_validas = {x for x in inter if not x.isdigit() or len(x) >= 4}
+    return len(inter_validas) > 0
+
 def buscar_guias_asociadas_para_unir(sheets_service, drive_service, guias_lista):
     """
     Busca en Registro_Guias las guías de Transporte y Remisión vinculadas al certificado.
@@ -946,36 +1045,61 @@ def buscar_guias_asociadas_para_unir(sheets_service, drive_service, guias_lista)
     if not sheets_service or not guias_lista:
         return []
     
+    # Aplanar y separar guías que vengan separadas por comas o saltos de línea
+    guias_a_buscar = []
+    for item in guias_lista:
+        if not item: continue
+        for sub in re.split(r'[,;\n]+', str(item)):
+            sub_c = sub.strip()
+            if sub_c and sub_c.upper() not in ['NONE', 'NAN', 'S/N', 'SIN GUIA', '-']:
+                guias_a_buscar.append(sub_c)
+                
+    if not guias_a_buscar:
+        return []
+    
     try:
         r = sheets_service.spreadsheets().values().get(
             spreadsheetId=ID_SHEET_REPOSITORIO, 
-            range="'Registro_Guias'!A1:O350"
+            range="'Registro_Guias'!A1:O"
         ).execute()
         filas = r.get('values', [])
         if len(filas) < 2: return []
-        
-        def norm_g(s):
-            t = re.sub(r'(?i)[nº°\s_-]', '', str(s)).upper()
-            return "".join([p.lstrip('0') if p.isdigit() else p for p in re.findall(r'[A-Z]+|[0-9]+', t)])
-
-        guias_norm = [norm_g(g) for g in guias_lista if str(g).strip() and str(g).strip().upper() not in ['NONE', 'NAN', 'S/N']]
         
         resultados = []
         
         for idx, row in enumerate(filas[1:]):
             row_idx = idx + 2
-            num_transporte = str(row[1]).strip() if len(row) > 1 else ""
-            num_remision = str(row[2]).strip() if len(row) > 2 else ""
-            archivo_transporte = str(row[8]).strip() if len(row) > 8 else ""
-            archivo_remision = str(row[9]).strip() if len(row) > 9 else ""
+            col1_guia = str(row[1]).strip() if len(row) > 1 else ""
+            col2_ligada = str(row[2]).strip() if len(row) > 2 else ""
+            tipo_guia = str(row[3]).strip().upper() if len(row) > 3 else ""
+            col8_hecha = str(row[8]).strip() if len(row) > 8 else ""
+            col9_recibida = str(row[9]).strip() if len(row) > 9 else ""
             observacion = str(row[11]).strip() if len(row) > 11 else ""
             
-            c_trans = norm_g(num_transporte)
-            c_rem = norm_g(num_remision)
-            
+            # Mapeo según Tipo Guía:
+            # Si es TRANSPORTISTA:
+            #   N° Guía (col1) es Transporte (EG03-...), Archivo col8 (Guia hecha) es Transporte
+            #   Guía ligada (col2) es Remisión (TR...), Archivo col9 (Guia recibida) es Remisión
+            # Si es REMITENTE:
+            #   N° Guía (col1) es Remisión (EG07-...), Archivo col8 (Guia hecha) es Remisión
+            #   Guía ligada (col2) es Transporte (TR...), Archivo col9 (Guia recibida) es Transporte
+            if "TRANSP" in tipo_guia or col1_guia.startswith("EG03"):
+                num_transporte = col1_guia
+                archivo_transporte = col8_hecha
+                num_remision = col2_ligada
+                archivo_remision = col9_recibida
+            else:
+                num_remision = col1_guia
+                archivo_remision = col8_hecha
+                num_transporte = col2_ligada
+                archivo_transporte = col9_recibida
+                
             match = False
-            for g in guias_norm:
-                if g and (g == c_rem or g in c_rem or c_rem in g or g == c_trans or g in c_trans or c_trans in g):
+            for g_busc in guias_a_buscar:
+                if (coinciden_guias_expediente(g_busc, num_remision) or 
+                    coinciden_guias_expediente(g_busc, num_transporte) or 
+                    coinciden_guias_expediente(g_busc, col1_guia) or 
+                    coinciden_guias_expediente(g_busc, col2_ligada)):
                     match = True
                     break
                     
