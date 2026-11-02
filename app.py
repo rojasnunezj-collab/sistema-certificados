@@ -1111,11 +1111,16 @@ if modulo_actual == "📄 Generador de Certificados":
             st.subheader("Emisor")
             
             if es_modelo:
-                # --- SI ES MODELO: Cajas en blanco, editables y sin buscar en Excel ---
+                from src.services.google_service import buscar_config_empresa
+                cfg_mod = buscar_config_empresa(empresa_firma) if empresa_firma != "MODELO" else {}
+                nom_def = cfg_mod.get('nombre') or (empresa_firma if empresa_firma != "MODELO" else "")
+                ruc_def = cfg_mod.get('ruc', "")
+                reg_def = cfg_mod.get('reg', "")
+
                 st.caption("💡 Datos de la empresa que emite (Modo Modelo):")
-                emisor_nombre = st.text_input("Nombre Emisor", value="", key="em_nom_mod")
-                emisor_ruc = st.text_input("RUC Emisor", value="", key="em_ruc_mod")
-                emisor_reg = st.text_input("Registro Emisor", value="", key="em_reg_mod")
+                emisor_nombre = st.text_input("Nombre Emisor", value=nom_def, key="em_nom_mod")
+                emisor_ruc = st.text_input("RUC Emisor", value=ruc_def, key="em_ruc_mod")
+                emisor_reg = st.text_input("Registro Emisor", value=reg_def, key="em_reg_mod")
             else:
                 # --- SI ES NORMAL: Lógica de búsqueda dinámica en configuración de empresas ---
                 info_emisor = None

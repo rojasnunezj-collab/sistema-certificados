@@ -229,20 +229,64 @@ def subir_a_drive(contenido_bytes, nombre_archivo, tipo_flujo, carpeta_id=None):
         return None
 
 def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
-    """Busca la plantilla en blanco en la nueva carpeta de Drive."""
+    """
+    Busca la plantilla en blanco en Drive.
+    Si se especifica una empresa real, prioriza su plantilla oficial configurada por ID.
+    Si no existe ID o es 'MODELO', busca en la carpeta de plantillas modelo en Drive.
+    """
+    import io
+    from googleapiclient.http import MediaIoBaseDownload
+    
+    tipo_flujo_limpio = str(tipo_certificado).strip()
+    
+    # 1. Si es una empresa real, intentar usar su plantilla oficial por ID
+    if empresa_nombre and str(empresa_nombre).upper() != "MODELO":
+        try:
+            cfg_emisor = buscar_config_empresa(empresa_nombre)
+            id_p = cfg_emisor.get('plantillas', {}).get(tipo_flujo_limpio)
+            if not id_p:
+                from src.config.settings import PLANTILLAS
+                id_p = PLANTILLAS.get(empresa_nombre, {}).get(tipo_flujo_limpio)
+            if not id_p and cfg_emisor.get('plantillas'):
+                id_p = next(iter(cfg_emisor['plantillas'].values()))
+                
+            if id_p:
+                f_meta = drive_service.files().get(fileId=id_p, fields='mimeType').execute()
+                m_type = f_meta.get('mimeType', '')
+                if 'application/vnd.google-apps.document' in m_type:
+                    req = drive_service.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                else:
+                    req = drive_service.files().get_media(fileId=id_p)
+                    
+                fh = io.BytesIO()
+                dl = MediaIoBaseDownload(fh, req)
+                done = False
+                while not done: _, done = dl.next_chunk()
+                fh.seek(0)
+                return fh
+        except Exception as e_cfg:
+            print(f"[Aviso] Fallback a carpeta modelo para {empresa_nombre}: {e_cfg}")
+
+    # 2. Respaldo: Buscar en la carpeta de plantillas de modelos
     CARPETA_PLANTILLAS_ID = '1_kY1h6PwlhDPl8BjG7u0fbGMT1AWyn3n' # Carpeta de plantillas en blanco
+    palabra_flujo = "Comercializacion" if "Comercializaci" in tipo_certificado else "Final"
     
-    palabra_flujo = "Comercializacion" if "Comercialización" in tipo_certificado else "Final"
-    
+    # Búsqueda tentativa por empresa + flujo
     query = (f"'{CARPETA_PLANTILLAS_ID}' in parents "
              f"and name contains '{empresa_nombre}' "
              f"and name contains '{palabra_flujo}' "
              f"and trashed=false")
-             
-    # CAMBIO 1: Le pedimos a Google que nos devuelva el 'mimeType' (el tipo de archivo)
     resultados = drive_service.files().list(q=query, spaces='drive', fields='files(id, name, mimeType)').execute()
     archivos = resultados.get('files', [])
     
+    # Si no hay match específico, buscar la plantilla genérica del flujo
+    if not archivos:
+        query_fallback = (f"'{CARPETA_PLANTILLAS_ID}' in parents "
+                          f"and (name contains '{palabra_flujo}' or name contains 'MODELO') "
+                          f"and trashed=false")
+        resultados = drive_service.files().list(q=query_fallback, spaces='drive', fields='files(id, name, mimeType)').execute()
+        archivos = resultados.get('files', [])
+        
     if not archivos:
         raise Exception(f"No se encontró plantilla en Drive para '{empresa_nombre}' y '{palabra_flujo}'. Revisa la carpeta de plantillas.")
         
@@ -250,12 +294,9 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
     archivo_id = archivo['id']
     mime_type = archivo.get('mimeType', '')
     
-    # CAMBIO 2: La bifurcación anti-Error 403
     if 'application/vnd.google-apps.document' in mime_type:
-        # Si Google lo convirtió a Google Docs, lo EXPORTAMOS como Word a la fuerza
         request = drive_service.files().export_media(fileId=archivo_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
     else:
-        # Si sigue siendo un Word puro (.docx), lo descargamos normal
         request = drive_service.files().get_media(fileId=archivo_id)
         
     fh = io.BytesIO()
@@ -292,62 +333,36 @@ def subir_modelo_a_drive(nombre_archivo, contenido_bytes, drive_service):
         print(f"Error subiendo modelo a Drive: {e}")
         return None
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def obtener_mapa_plantillas_drive(es_modelo=False):
-    """Escanea Drive y mapea según el modo seleccionado (Normal o Modelo)."""
-    # En modo normal, usamos la configuración dinámica de la pestaña EMPRESAS del Sheet
-    if not es_modelo:
+    """
+    Escanea la configuración de empresas y mapea los servicios disponibles.
+    Permite siempre seleccionar cualquiera de las empresas generadoras reales,
+    incluso si se activa el modo de Certificado Modelo.
+    """
+    mapa_dinamico = {}
+    try:
         cfgs = obtener_configuracion_empresas()
         if cfgs:
-            mapa_dinamico = {}
             for emp, cfg in cfgs.items():
                 mapa_dinamico[emp] = cfg.get("servicios", ["Comercialización", "Disposición Final 1", "Disposición Final 2"])
-            return mapa_dinamico
+    except Exception as e_cfg:
+        print(f"[Aviso] Error leyendo configuracion empresas para mapa: {e_cfg}")
 
-    drive_service, _ = obtener_servicios()
-    
-    if not drive_service: 
-        return {"EPMI S.A.C.": ["Comercialización", "Disposición Final"]}
-    
-    # --- EL INTERRUPTOR DE CARPETAS (Modo Modelo) ---
-    ID_CARPETA = '1_kY1h6PwlhDPl8BjG7u0fbGMT1AWyn3n' # Carpeta de MODELOS
-    modo_texto = "MODO MODELO"
-    
-    query = f"'{ID_CARPETA}' in parents and trashed = false"
-    
-    try:
-        resultados = drive_service.files().list(q=query, fields='files(name, mimeType)').execute()
-        archivos = resultados.get('files', [])
-        mapa = {}
-        
-        print(f"\n--- REVISANDO DRIVE ({modo_texto}): {len(archivos)} ARCHIVOS ---")
+    if not mapa_dinamico:
+        try:
+            from src.config.settings import PLANTILLAS
+            for emp, servs in PLANTILLAS.items():
+                mapa_dinamico[emp] = list(servs.keys())
+        except Exception:
+            pass
 
-        for arch in archivos:
-            nombre_raw = arch.get('name', '').upper()
-            if arch.get('mimeType') == 'application/vnd.google-apps.folder':
-                continue
+    if es_modelo:
+        # Añadir opción genérica MODELO si se desea prueba libre
+        if "MODELO" not in mapa_dinamico:
+            mapa_dinamico["MODELO"] = ["Comercialización", "Disposición Final"]
 
-            print(f"-> Analizando: {nombre_raw}")
-
-            empresa = "MODELO"
-            
-            if empresa not in mapa:
-                mapa[empresa] = []
-            
-            if "COMERCIALIZACION" in nombre_raw or "COMERCIALIZACIÓN" in nombre_raw:
-                mapa[empresa].append("Comercialización")
-            if "FINAL" in nombre_raw:
-                mapa[empresa].append("Disposición Final")
-
-        for emp in mapa:
-            mapa[emp] = sorted(list(set(mapa[emp])))
-
-        print(f"--- MAPA GENERADO: {mapa} ---\n")
-        return mapa if mapa else {"EPMI S.A.C.": ["Comercialización"]}
-
-    except Exception as e:
-        print(f"🚨 Error al leer Drive: {e}")
-        return {"EPMI S.A.C.": ["Comercialización"]}
+    return mapa_dinamico if mapa_dinamico else {"EPMI S.A.C.": ["Comercialización"]}
 
 @st.cache_data(ttl=600) 
 def obtener_clientes_desde_sheets():
