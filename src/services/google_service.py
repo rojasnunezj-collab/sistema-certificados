@@ -383,6 +383,30 @@ def obtener_clientes_desde_sheets():
         st.error(f"🚨 Error real leyendo el Excel: {e}") 
         return {}
 
+# --- FALLBACK SEGURO DE CARPETAS DE GUÍAS ---
+CARPETAS_GUIAS_DEFAULT = {
+    "EPMI S.A.C.": {"hechas": "", "recibidas": ""},
+    "INECOVE S.A.C.": {"hechas": "", "recibidas": ""},
+    "TRANSPORT & SERVICE ALHUAY S.A.C.": {
+        "hechas": "1iYLDP6DE4e5bPCtpJ4Bgb16XKVvT4yCk",
+        "recibidas": "1WSyZhKo7XqcHu-Zq4emkEhGTQ63EYEBp"
+    },
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
+        "hechas": "1R_4asjtOQG3Bxgbtx1SJjWYnNQBweovM",
+        "recibidas": "1vPvVcNHb52rq7xi-nMK0_dkG10YaOTB9"
+    }
+}
+
+def obtener_dict_carpetas_guias():
+    try:
+        import src.config.settings as _stg
+        if not hasattr(_stg, 'CARPETAS_GUIAS'):
+            import importlib
+            _stg = importlib.reload(_stg)
+        return getattr(_stg, 'CARPETAS_GUIAS', CARPETAS_GUIAS_DEFAULT)
+    except Exception:
+        return CARPETAS_GUIAS_DEFAULT
+
 @st.cache_data(ttl=300)
 def obtener_configuracion_empresas():
     """
@@ -473,8 +497,8 @@ def obtener_configuracion_empresas():
                 from src.config.settings import SHEETS_SIGERSOL, ID_SHEET_SIGERSOL
                 id_sheet_sigersol = SHEETS_SIGERSOL.get(emp_nombre, ID_SHEET_SIGERSOL)
 
-            from src.config.settings import CARPETAS_GUIAS
-            cfg_cg = CARPETAS_GUIAS.get(emp_nombre, {})
+            dict_cg = obtener_dict_carpetas_guias()
+            cfg_cg = dict_cg.get(emp_nombre, {})
             if not carpetas_guias.get('hechas'):
                 carpetas_guias['hechas'] = cfg_cg.get('hechas', '')
             if not carpetas_guias.get('recibidas'):
@@ -588,8 +612,8 @@ def obtener_carpeta_guias(empresa_nombre, tipo_guia="hechas") -> str:
             if cid:
                 return cid
 
-    # Fallback directo en settings.py
-    from src.config.settings import CARPETAS_GUIAS
+    # Fallback directo seguro
+    CARPETAS_GUIAS = obtener_dict_carpetas_guias()
     em_target = str(empresa_nombre or "").strip().upper()
     for k_emp, dic_c in CARPETAS_GUIAS.items():
         k_upper = k_emp.upper()

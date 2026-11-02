@@ -56,6 +56,13 @@ except Exception as err_import:
     st.code(traceback.format_exc())
     st.stop()
 
+try:
+    import src.config.settings as _settings_mod
+    if not hasattr(_settings_mod, 'CARPETAS_GUIAS'):
+        importlib.reload(_settings_mod)
+except Exception:
+    pass
+
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
 from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf
 from src.utils.format_utils import (
