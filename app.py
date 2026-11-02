@@ -374,50 +374,6 @@ if modulo_actual == "📄 Generador de Certificados":
                     st.cache_data.clear()
                     st.success("Toda la Memoria RAM del entorno purgó Sheets y Drive.")
 
-        # --- SECCIÓN: Carga Directa de Guías a Google Drive ---
-        st.divider()
-        with st.expander("📁 Almacén de Guías en Drive", expanded=False):
-            st.caption("Guarda guías (Hechas o Recibidas) en sus respectivas carpetas de Google Drive por empresa.")
-            empresas_disponibles_guias = [
-                "TRANSPORT & SERVICE ALHUAY S.A.C.",
-                "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.",
-                "EPMI S.A.C.",
-                "INECOVE S.A.C."
-            ]
-            emp_sel_guias = st.selectbox("Empresa:", options=empresas_disponibles_guias, key="sb_emp_guias_directa")
-            tipo_sel_guias = st.radio("Tipo de Guías:", ["Guías Recibidas", "Guías Hechas"], horizontal=True, key="sb_tipo_guias_directa")
-            tipo_k_guias = "recibidas" if "recib" in tipo_sel_guias.lower() else "hechas"
-
-            cid_act = obtener_carpeta_guias(emp_sel_guias, tipo_k_guias)
-            if cid_act:
-                link_gdrive = f"https://drive.google.com/drive/folders/{cid_act}"
-                st.markdown(f"📂 [Abrir carpeta en Drive]({link_gdrive})")
-            else:
-                st.info("ℹ️ Sin carpeta configurada para esta empresa.")
-
-            archivos_guias_directas = st.file_uploader(
-                "Subir archivos de guías:",
-                type=["pdf", "jpg", "jpeg", "png"],
-                accept_multiple_files=True,
-                key="sb_uploader_guias_directas"
-            )
-            if archivos_guias_directas and st.button("📤 Guardar en Drive", use_container_width=True, key="sb_btn_guardar_guias_drive"):
-                cont_ok = 0
-                for f_g in archivos_guias_directas:
-                    r_up = guardar_guia_en_drive(
-                        f_g.getvalue(),
-                        f_g.name,
-                        empresa_nombre=emp_sel_guias,
-                        tipo_guia=tipo_k_guias
-                    )
-                    if r_up and r_up.get('ok'):
-                        cont_ok += 1
-                        st.success(f"✅ {f_g.name}: [Ver en Drive]({r_up.get('link')})")
-                    else:
-                        err_d = r_up.get('error', 'Error desconocido') if r_up else 'No se pudo subir'
-                        st.error(f"❌ {f_g.name}: {err_d}")
-                if cont_ok > 0:
-                    st.toast(f"✅ Se guardaron {cont_ok} archivo(s) en Google Drive")
 
 if modulo_actual == "📄 Generador de Certificados":
 
