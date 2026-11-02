@@ -11,24 +11,46 @@ from datetime import datetime, timedelta
 # Importamos ÚNICAMENTE el motor de Vertex (eliminamos la función vieja)
 from src.services.vertex_service import procesar_guia_ia_vertex
 
-# --- MEJORA: Añadimos leer_sheet_seguro a la lista de importaciones ---
+# --- MEJORA: Importaciones de Google Service con autorecarga y protección contra desfase de módulos en caliente ---
+import sys
+import importlib
+
 try:
-    from src.services.google_service import (
-        obtener_servicios, subir_a_drive, obtener_plantilla_drive, 
-        subir_modelo_a_drive, obtener_mapa_plantillas_drive, 
-        obtener_datos_empresas_desde_sheets, registrar_en_control,
-        leer_sheet_seguro,
-        obtener_catalogo_guias, buscar_guias_repositorio, descargar_guias_drive, actualizar_bitacora_guias, buscar_actualizar_guia,
-        buscar_guias_asociadas_para_unir, descargar_archivo_drive_por_id_o_nombre, unir_tres_documentos_pdf,
-        subir_pdf_a_drive, actualizar_link_pdf_historial, extraer_id_drive,
-        obtener_catalogo_servicios_por_categoria,
-        convertir_docx_a_pdf, buscar_datos_certificado_en_historial,
-        sobrescribir_o_subir_pdf_drive, registrar_edicion_en_historial,
-        obtener_info_revision_documento_drive,
-        obtener_configuracion_empresas, buscar_config_empresa,
-        obtener_sheet_sigersol_destino, obtener_carpeta_guias, guardar_guia_en_drive
-    )
-except ImportError as err_import:
+    import src.services.google_service as _gs_mod
+    if not hasattr(_gs_mod, 'obtener_carpeta_guias') or not hasattr(_gs_mod, 'guardar_guia_en_drive'):
+        _gs_mod = importlib.reload(_gs_mod)
+        
+    obtener_servicios = _gs_mod.obtener_servicios
+    subir_a_drive = _gs_mod.subir_a_drive
+    obtener_plantilla_drive = _gs_mod.obtener_plantilla_drive
+    subir_modelo_a_drive = _gs_mod.subir_modelo_a_drive
+    obtener_mapa_plantillas_drive = _gs_mod.obtener_mapa_plantillas_drive
+    obtener_datos_empresas_desde_sheets = _gs_mod.obtener_datos_empresas_desde_sheets
+    registrar_en_control = _gs_mod.registrar_en_control
+    leer_sheet_seguro = _gs_mod.leer_sheet_seguro
+    obtener_catalogo_guias = _gs_mod.obtener_catalogo_guias
+    buscar_guias_repositorio = _gs_mod.buscar_guias_repositorio
+    descargar_guias_drive = _gs_mod.descargar_guias_drive
+    actualizar_bitacora_guias = _gs_mod.actualizar_bitacora_guias
+    buscar_actualizar_guia = _gs_mod.buscar_actualizar_guia
+    buscar_guias_asociadas_para_unir = _gs_mod.buscar_guias_asociadas_para_unir
+    descargar_archivo_drive_por_id_o_nombre = _gs_mod.descargar_archivo_drive_por_id_o_nombre
+    unir_tres_documentos_pdf = _gs_mod.unir_tres_documentos_pdf
+    subir_pdf_a_drive = _gs_mod.subir_pdf_a_drive
+    actualizar_link_pdf_historial = _gs_mod.actualizar_link_pdf_historial
+    extraer_id_drive = _gs_mod.extraer_id_drive
+    obtener_catalogo_servicios_por_categoria = _gs_mod.obtener_catalogo_servicios_por_categoria
+    convertir_docx_a_pdf = _gs_mod.convertir_docx_a_pdf
+    buscar_datos_certificado_en_historial = _gs_mod.buscar_datos_certificado_en_historial
+    sobrescribir_o_subir_pdf_drive = _gs_mod.sobrescribir_o_subir_pdf_drive
+    registrar_edicion_en_historial = _gs_mod.registrar_edicion_en_historial
+    obtener_info_revision_documento_drive = _gs_mod.obtener_info_revision_documento_drive
+    obtener_configuracion_empresas = _gs_mod.obtener_configuracion_empresas
+    buscar_config_empresa = _gs_mod.buscar_config_empresa
+    obtener_sheet_sigersol_destino = getattr(_gs_mod, 'obtener_sheet_sigersol_destino', lambda em=None, cl=None: "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
+    obtener_carpeta_guias = getattr(_gs_mod, 'obtener_carpeta_guias', lambda emp, tg='hechas': "")
+    guardar_guia_en_drive = getattr(_gs_mod, 'guardar_guia_en_drive', lambda *a, **k: {'ok': False, 'error': 'Función de respaldo no disponible'})
+except Exception as err_import:
     import traceback
     st.error(f"❌ Error al inicializar servicios de Google: {err_import}")
     st.code(traceback.format_exc())
