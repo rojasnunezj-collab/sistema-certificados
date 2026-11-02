@@ -12,7 +12,7 @@ from src.config.settings import ID_SHEET_CONTROL, ID_SHEET_REPOSITORIO
 # ====================================================================
 # --- BLOQUE 1: Lectura Segura de Google Sheets (Caché Opcional) ---
 # ====================================================================
-@st.cache_data(show_spinner=False, ttl=600)
+@st.cache_data(show_spinner=False, ttl=60)
 def leer_sheet_seguro(pestaña):
     """Lectura segura de Google Sheets con cacheo parcial y normalización robusta de columnas"""
     _, s = obtener_servicios()
@@ -21,18 +21,23 @@ def leer_sheet_seguro(pestaña):
         r = s.spreadsheets().values().get(spreadsheetId=ID_SHEET_REPOSITORIO, range=f"'{pestaña}'!A1:Z1000").execute()
         v = r.get('values', [])
         if not v or len(v) == 0: return pd.DataFrame()
-        headers = [str(c).strip() for c in v[0]]
-        num_cols = len(headers)
+        raw_headers = v[0]
+        num_cols = len(raw_headers)
         if num_cols == 0: return pd.DataFrame()
         
+        headers = [str(c).strip() if str(c).strip() else f"Col_{i+1}" for i, c in enumerate(raw_headers)]
+        
         # Normalizar cada fila al número exacto de columnas de la cabecera
-        filas = [
-            row + [''] * (num_cols - len(row)) if len(row) < num_cols else row[:num_cols]
-            for row in v[1:]
-        ]
+        filas = []
+        for row in v[1:]:
+            if len(row) < num_cols:
+                filas.append(list(row) + [''] * (num_cols - len(row)))
+            else:
+                filas.append(list(row[:num_cols]))
+                
         return pd.DataFrame(filas, columns=headers)
     except Exception as e:
-        st.error(f"Error leyendo pestaña {pestaña}: {e}")
+        print(f"[Aviso] Error leyendo pestaña {pestaña}: {e}")
         return pd.DataFrame()
 
 # ====================================================================
@@ -161,6 +166,10 @@ def registrar_en_control(datos_fila, hoja_destino="Historial"):
         updated_range = updates.get('updatedRange', '')
         m = re.search(r'(\d+)', updated_range.split('!')[-1])
         fila_idx = int(m.group(1)) if m else None
+        try:
+            leer_sheet_seguro.clear()
+        except Exception:
+            pass
         return fila_idx if fila_idx else True
     except: return False
 
@@ -412,6 +421,7 @@ def obtener_configuracion_empresas():
                 hoja_hist = f"Historial_{emp_clean_token}" if "EPMI" not in emp_nombre.upper() else "Historial"
 
             carpetas = {}
+            carpetas_guias = {'hechas': '', 'recibidas': ''}
             plantillas = {}
             id_sheet_sigersol = ""
 
@@ -423,7 +433,11 @@ def obtener_configuracion_empresas():
                 clean_id = extraer_id_drive(val)
                 if col_clean.startswith('CARPETA_'):
                     op_key = col_clean.replace('CARPETA_', '')
-                    if 'COMERCIALIZACI' in op_key:
+                    if 'HECHAS' in op_key:
+                        carpetas_guias['hechas'] = clean_id
+                    elif 'RECIBIDAS' in op_key:
+                        carpetas_guias['recibidas'] = clean_id
+                    elif 'COMERCIALIZACI' in op_key:
                         carpetas['Comercialización'] = clean_id
                     elif 'FINAL_1' in op_key:
                         carpetas['Disposición Final 1'] = clean_id
@@ -459,6 +473,13 @@ def obtener_configuracion_empresas():
                 from src.config.settings import SHEETS_SIGERSOL, ID_SHEET_SIGERSOL
                 id_sheet_sigersol = SHEETS_SIGERSOL.get(emp_nombre, ID_SHEET_SIGERSOL)
 
+            from src.config.settings import CARPETAS_GUIAS
+            cfg_cg = CARPETAS_GUIAS.get(emp_nombre, {})
+            if not carpetas_guias.get('hechas'):
+                carpetas_guias['hechas'] = cfg_cg.get('hechas', '')
+            if not carpetas_guias.get('recibidas'):
+                carpetas_guias['recibidas'] = cfg_cg.get('recibidas', '')
+
             # Los servicios ofertados dependen estrictamente de las plantillas existentes.
             # Si solo tiene una plantilla, solo saldrá esa plantilla. Si tiene más, saldrán todas.
             servicios = [s for s, pid in plantillas.items() if pid and str(pid).strip() and str(pid).strip().lower() != 'nan']
@@ -473,6 +494,7 @@ def obtener_configuracion_empresas():
                 'reg': reg,
                 'hoja_historial': hoja_hist,
                 'carpetas': carpetas,
+                'carpetas_guias': carpetas_guias,
                 'plantillas': plantillas,
                 'servicios': servicios,
                 'id_sheet_sigersol': id_sheet_sigersol
@@ -550,6 +572,90 @@ def obtener_sheet_sigersol_destino(emisor_nombre=None, cliente_nombre=None) -> s
                 return sid
 
     return ID_SHEET_SIGERSOL
+
+def obtener_carpeta_guias(empresa_nombre, tipo_guia="hechas") -> str:
+    """
+    Obtiene el ID de la carpeta de Drive para guías ('hechas' o 'recibidas') según la empresa emisora.
+    Prioridad:
+    1. Configuración dinámica en la pestaña 'EMPRESAS' de Google Sheets (columnas CARPETA_GUIAS_HECHAS / CARPETA_GUIAS_RECIBIDAS)
+    2. Diccionario de respaldo CARPETAS_GUIAS en src/config/settings.py
+    """
+    tipo_key = "recibidas" if "recib" in str(tipo_guia).lower() else "hechas"
+    if empresa_nombre:
+        cfg = buscar_config_empresa(empresa_nombre)
+        if cfg and cfg.get('carpetas_guias'):
+            cid = cfg['carpetas_guias'].get(tipo_key)
+            if cid:
+                return cid
+
+    # Fallback directo en settings.py
+    from src.config.settings import CARPETAS_GUIAS
+    em_target = str(empresa_nombre or "").strip().upper()
+    for k_emp, dic_c in CARPETAS_GUIAS.items():
+        k_upper = k_emp.upper()
+        if k_upper in em_target or em_target in k_upper or any(token in em_target for token in k_upper.split() if len(token) > 3):
+            cid = dic_c.get(tipo_key)
+            if cid:
+                return cid
+    return ""
+
+def guardar_guia_en_drive(contenido_bytes, nombre_archivo, empresa_nombre=None, tipo_guia="recibidas", carpeta_id=None):
+    """
+    Sube y guarda una guía (PDF, JPG, PNG, etc.) en Google Drive en la carpeta correspondiente de la empresa ('hechas' o 'recibidas').
+    Retorna un diccionario con { 'ok': bool, 'id': file_id, 'link': webViewLink, 'nombre': nombre_archivo } o {'ok': False, 'error': msg}.
+    """
+    import io
+    from googleapiclient.http import MediaIoBaseUpload
+
+    cid = carpeta_id or obtener_carpeta_guias(empresa_nombre, tipo_guia)
+    if not cid:
+        err_msg = f"No se encontró carpeta de guías configurada para empresa '{empresa_nombre}' (tipo: '{tipo_guia}')."
+        print(f"[Aviso] {err_msg}")
+        return {'ok': False, 'error': err_msg}
+
+    drive, _ = obtener_servicios()
+    if not drive:
+        return {'ok': False, 'error': "No se pudo inicializar el servicio de Google Drive."}
+
+    nom_lower = str(nombre_archivo).lower()
+    if nom_lower.endswith('.pdf'):
+        mimetype = 'application/pdf'
+    elif nom_lower.endswith('.png'):
+        mimetype = 'image/png'
+    elif nom_lower.endswith('.jpg') or nom_lower.endswith('.jpeg'):
+        mimetype = 'image/jpeg'
+    else:
+        mimetype = 'application/pdf' if '.' not in nombre_archivo else 'application/octet-stream'
+
+    nom_final = nombre_archivo if '.' in nombre_archivo else f"{nombre_archivo}.pdf"
+
+    try:
+        file_metadata = {
+            'name': nom_final,
+            'mimeType': mimetype,
+            'parents': [cid]
+        }
+        media = MediaIoBaseUpload(
+            io.BytesIO(contenido_bytes),
+            mimetype=mimetype,
+            resumable=True
+        )
+        file = drive.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, name, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        return {
+            'ok': True,
+            'id': file.get('id'),
+            'link': file.get('webViewLink'),
+            'nombre': file.get('name')
+        }
+    except Exception as e:
+        err_str = str(e)
+        print(f"[Error] Subida de guía a Drive: {err_str}")
+        return {'ok': False, 'error': err_str}
 
 @st.cache_data(ttl=600)
 def obtener_datos_empresas_desde_sheets():
