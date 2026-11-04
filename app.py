@@ -55,6 +55,8 @@ try:
     obtener_sheet_sigersol_destino = getattr(_gs_mod, 'obtener_sheet_sigersol_destino', lambda em=None, cl=None: "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
     obtener_carpeta_guias = getattr(_gs_mod, 'obtener_carpeta_guias', lambda emp, tg='hechas': "")
     guardar_guia_en_drive = getattr(_gs_mod, 'guardar_guia_en_drive', lambda *a, **k: {'ok': False, 'error': 'Función de respaldo no disponible'})
+    guardar_pdf_en_carpeta_docs = getattr(_gs_mod, 'guardar_pdf_en_carpeta_docs', None)
+    obtener_carpeta_padre_archivo_drive = getattr(_gs_mod, 'obtener_carpeta_padre_archivo_drive', None)
 except Exception as err_import:
     import traceback
     st.error(f"❌ Error al inicializar servicios de Google: {err_import}")
@@ -303,7 +305,7 @@ if 'datos_extraidos' not in st.session_state:
 if 'uploader_key' not in st.session_state:
     st.session_state.uploader_key = 0
 
-modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🔄 Actualizar Expediente", "📑 Expedientes Petramás", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
+modulo_actual = st.radio("Módulo", ["📄 Generador de Certificados", "🔍 Buscar y Actualizar Certificados", "📑 Expedientes Petramás", "🏢 Sigersol"], horizontal=True, label_visibility="collapsed")
 
 if modulo_actual == "📄 Generador de Certificados":
     # ====================================================================
@@ -2245,55 +2247,73 @@ if modulo_actual == "📄 Generador de Certificados":
             else:
                 st.info("Flujo finalizado. El certificado Word quedó registrado en Google Drive y Sheets.")
 
-elif modulo_actual == "🔄 Actualizar Expediente":
-    st.title("🔄 Actualizar y Regenerar Expediente")
-    st.info("💡 Modifica un certificado emitido, reemplázalo quirúrgicamente en el PDF consolidado conservando las guías originales intactas, y sincroniza los cambios en Google Drive y la hoja Historial.")
+elif modulo_actual in ["🔍 Buscar y Actualizar Certificados", "🔄 Actualizar Expediente"]:
+    st.title("🔍 Buscar y Actualizar Certificados / Expediente")
+    st.info("💡 Localiza un certificado por Empresa Firmante y Correlativo, edítalo en Google Docs, y regenera automáticamente el PDF consolidado en la misma carpeta de Drive, actualizando el Sheet de Control y Sigersol.")
 
     tab_historial, tab_manual = st.tabs(["📑 Desde Historial (Automático con Drive)", "⚡ Reemplazo Directo (Carga de Archivos)"])
 
     drv, sht = obtener_servicios()
 
     with tab_historial:
-        st.markdown("### 1. Localizar Certificado en Historial")
+        st.markdown("### 1. Búsqueda por Empresa Firmante y Número de Certificado")
         cfg_empresas_hist = obtener_configuracion_empresas()
-        opciones_emp_busq = ["Todas"] + list(cfg_empresas_hist.keys())
-        c_emp, c_busq1, c_busq2 = st.columns([2, 2, 1])
+        
+        lista_empresas_firmantes = list(cfg_empresas_hist.keys())
+        if not lista_empresas_firmantes:
+            lista_empresas_firmantes = ["EPMI S.A.C.", "INECOVE S.A.C.", "RENOVA RECICLAJE S.A.C.", "TRANSPORT & SERVICE ALHUAY S.A.C.", "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C."]
+
+        c_emp, c_busq1, c_busq2 = st.columns([2.5, 2, 1.5])
         with c_emp:
-            emp_busq_sel = st.selectbox("Empresa Emisora:", opciones_emp_busq, key="act_empresa_busq")
+            # Paso 1: Selección obligatoria de la empresa firmante primero
+            emp_busq_sel = st.selectbox("1. Empresa Firmante:", lista_empresas_firmantes, key="act_empresa_firmante_sel")
+            
+        cfg_emp_act = cfg_empresas_hist.get(emp_busq_sel, {})
+        hoja_destino_act = cfg_emp_act.get('hoja_historial') or ("Historial_RENOVA_RECICLAJE" if "RENOVA" in emp_busq_sel.upper() else "Historial")
+        carpeta_empresa_act = cfg_emp_act.get('carpetas', {}).get('Comercialización') or cfg_emp_act.get('carpetas', {}).get('Disposición Final 1') or CARPETAS_DESTINO.get(emp_busq_sel, {}).get('Comercialización')
+
+        # Detectar si cambió la empresa seleccionada para limpiar resultados anteriores
+        if st.session_state.get('act_last_empresa') != emp_busq_sel:
+            st.session_state['act_last_empresa'] = emp_busq_sel
+            for k_del in ['act_certificados_encontrados', 'act_pdf_final_bytes', 'act_pdf_final_link', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_doc_cloud_info', 'act_res_sigersol']:
+                st.session_state.pop(k_del, None)
+
         with c_busq1:
-            corr_busqueda = st.text_input("Ingrese N° Correlativo:", placeholder="Ej: 045, 001...", key="input_corr_actualizar")
+            # Paso 2: Búsqueda del número de certificado en la pestaña correspondiente
+            corr_busqueda = st.text_input("2. N° Certificado / Correlativo:", placeholder="Ej: 001, 1, 045...", key="input_corr_actualizar")
+
         with c_busq2:
             st.write("")
             st.write("")
-            btn_buscar_corr = st.button("🔍 Buscar en Historial", type="primary", use_container_width=True, key="btn_buscar_historial")
+            c_btn_b1, c_btn_b2 = st.columns(2)
+            with c_btn_b1:
+                btn_buscar_corr = st.button("🔍 Buscar", type="primary", use_container_width=True, key="btn_buscar_historial")
+            with c_btn_b2:
+                btn_recientes = st.button("📋 Recientes", use_container_width=True, key="btn_ver_recientes_hist")
 
-        if btn_buscar_corr and corr_busqueda:
-            with st.spinner("Buscando en Historial y resolviendo enlaces de Drive..."):
-                hallados = []
-                hojas_a_buscar = set()
-                if emp_busq_sel == "Todas":
-                    for c_info in cfg_empresas_hist.values():
-                        hojas_a_buscar.add(c_info.get("hoja_historial", "Historial"))
-                    if not hojas_a_buscar:
-                        hojas_a_buscar.add("Historial")
-                else:
-                    c_info = cfg_empresas_hist.get(emp_busq_sel, {})
-                    hojas_a_buscar.add(c_info.get("hoja_historial", "Historial"))
+        st.caption(f"📊 Pestaña vinculada en Sheet de Control: **`{hoja_destino_act}`**")
 
-                for h_dest in sorted(list(hojas_a_buscar)):
-                    res_h = buscar_datos_certificado_en_historial(sht, corr_busqueda, servicio_drive=drv, hoja_destino=h_dest)
-                    hallados.extend(res_h)
-
+        if (btn_buscar_corr and corr_busqueda) or btn_recientes or (btn_buscar_corr and not corr_busqueda):
+            query_buscar = corr_busqueda.strip() if btn_buscar_corr and corr_busqueda else None
+            with st.spinner(f"Consultando pestaña '{hoja_destino_act}' y resolviendo enlaces de Drive..."):
+                hallados = buscar_datos_certificado_en_historial(
+                    sht, 
+                    correlativo=query_buscar, 
+                    servicio_drive=drv, 
+                    hoja_destino=hoja_destino_act,
+                    carpeta_empresa_id=carpeta_empresa_act,
+                    limite=30
+                )
                 st.session_state['act_certificados_encontrados'] = hallados
                 if not hallados:
-                    st.warning(f"⚠️ No se encontró ningún certificado con el correlativo '{corr_busqueda}'.")
+                    st.warning(f"⚠️ No se encontró ningún certificado en '{hoja_destino_act}' con el correlativo '{corr_busqueda}'.")
                 else:
-                    st.success(f"✅ Se encontraron {len(hallados)} registro(s) para el correlativo '{corr_busqueda}'.")
+                    st.success(f"✅ Se encontraron {len(hallados)} registro(s) en '{hoja_destino_act}'.")
 
         hallados = st.session_state.get('act_certificados_encontrados', [])
         if hallados:
             if len(hallados) > 1:
-                opciones_sel = [f"[{h.get('hoja_historial', 'Historial')}] Fila {h['fila']} | {h['fecha']} | {h['empresa']} | {h['fundo']} | Guías: {h['guias']}" for h in hallados]
+                opciones_sel = [f"Fila {h['fila']} | Corr: {h['correlativo']} | {h['fecha']} | {h['empresa']} | {h['fundo']} | Guías: {h['guias']}" for h in hallados]
                 sel_idx = st.selectbox("Seleccione el certificado específico a editar:", range(len(hallados)), format_func=lambda i: opciones_sel[i], key="sel_cert_multiple")
                 cert_sel = hallados[sel_idx]
             else:
@@ -2317,9 +2337,9 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                 raw_pdf = cert_sel.get('raw_pdf', '')
                 obs_actual = cert_sel.get('observacion', '')
 
-                # 1. Enlace a Word
+                # 1. Enlace directo a Google Docs
                 if link_doc_actual and str(link_doc_actual).startswith(('http://', 'https://')):
-                    st.link_button("📄 Editar Word en Docs ↗", link_doc_actual, use_container_width=True)
+                    st.link_button("📄 Abrir y Editar en Google Docs ↗", link_doc_actual, use_container_width=True)
                 elif raw_doc:
                     st.markdown(f"📄 **Word:** `{raw_doc}`")
                 else:
@@ -2327,11 +2347,11 @@ elif modulo_actual == "🔄 Actualizar Expediente":
 
                 # 2. Enlace a PDF
                 if link_pdf_actual and str(link_pdf_actual).startswith(('http://', 'https://')):
-                    st.link_button("📑 Ver PDF Unificado en Drive ↗", link_pdf_actual, use_container_width=True)
+                    st.link_button("📑 Ver PDF en Google Drive ↗", link_pdf_actual, use_container_width=True)
                 elif raw_pdf:
                     st.markdown(f"📑 **PDF:** `{raw_pdf}`")
                 else:
-                    st.caption("📑 PDF: Sin registro en Historial")
+                    st.caption("📑 PDF: Aún no generado (Se creará con esta acción)")
 
                 if obs_actual:
                     st.caption(f"📝 *Obs previa:* {obs_actual}")
@@ -2339,10 +2359,10 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             st.divider()
             st.markdown("### 3. Edición del Certificado y Verificación en la Nube")
             st.info("""
-            📝 **Flujo recomendado para editar:**
-            1. Haz clic en el botón superior **[📄 Editar Word en Docs ↗]** para abrir y modificar los datos (pesos, placas, correlativo, etc.) en Google Docs.
-            2. En Google Docs, confirma que aparezca el icono de la nube con el check ✓ **'Guardado en Drive'**.
-            3. Haz clic en el botón **'🔄 Recargar de la Nube y Verificar Cambios'** a continuación para limpiar la memoria/caché y comprobar que Google Drive ya tiene tu nueva versión antes de regenerar.
+            📝 **Flujo de Modificación:**
+            1. Haz clic en **[📄 Abrir y Editar en Google Docs ↗]** para modificar datos (pesos, placas, correlativo, fechas, etc.).
+            2. En Google Docs, confirma que aparezca el icono de nube con el check ✓ **'Guardado en Drive'**.
+            3. Haz clic en **'🔄 Recargar de la Nube y Verificar Cambios'** para confirmar que Google Drive ya tiene tu nueva versión antes de regenerar el expediente.
             """)
 
             doc_target_actual = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
@@ -2353,7 +2373,7 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                 btn_limpiar_sesion = st.button("🧹 Limpiar Sesión y Reiniciar", use_container_width=True, key="btn_reset_modulo_actualizar")
 
             if btn_limpiar_sesion:
-                for k in ['act_certificados_encontrados', 'act_pdf_final_bytes', 'act_pdf_final_link', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_doc_cloud_info']:
+                for k in ['act_certificados_encontrados', 'act_pdf_final_bytes', 'act_pdf_final_link', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_doc_cloud_info', 'act_res_sigersol']:
                     st.session_state.pop(k, None)
                 st.cache_data.clear()
                 st.rerun()
@@ -2384,7 +2404,9 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     if info_doc.get('es_reciente'):
                         st.success(f"✅ **¡Documento sincronizado en Google Drive!** (Modificado {info_doc['tiempo_rel']}). Ya puedes regenerar el expediente con total seguridad.")
                     else:
-                        st.warning(f"⚠️ **Aviso de Sincronización:** En Google Drive, este archivo figura modificado el **{info_doc['modified_pe']} ({info_doc['tiempo_rel']})**.\n\nSi acabas de editar en Google Docs y no ves tus cambios reflejados, Google Docs puede tardar unos segundos en volcar el archivo a Drive. Asegúrate de presionar Enter o cerrar la pestaña de Google Docs, espera unos instantes y vuelve a presionar **[🔄 Recargar de la Nube y Verificar Cambios]**.")
+                        st.warning(f"""⚠️ **Aviso de Sincronización:** En Google Drive, este archivo figura modificado el **{info_doc['modified_pe']} ({info_doc['tiempo_rel']})**.
+
+Si acabas de editar en Google Docs y no ves tus cambios reflejados, asegúrate de haber cerrado la pestaña de Docs o esperar unos segundos a que Drive vuelque la caché, luego vuelve a presionar **[🔄 Recargar de la Nube]**.""")
 
                     if info_doc.get('filas_resumen'):
                         with st.expander("📋 Ver datos detectados en la tabla del Word (Primeras filas)", expanded=True):
@@ -2398,7 +2420,8 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             )
 
             st.divider()
-            st.markdown("### 4. Regenerar y Publicar Expediente")
+            st.markdown("### 4. Regenerar Expediente Completo (Certificado + Guías / Petramás)")
+            st.info("⚡ **Acción de regeneración integral:** Se convertirá el certificado modificado a PDF y se regenerará de forma obligatoria el expediente completo (con sus guías de remisión y transporte o constancia Petramás). El documento resultante se guardará en la misma carpeta donde reside el Docs, se registrará en el Sheet de Control y se migrará a SIGERSOL.")
 
             # Resolver nombre original exacto del archivo PDF
             raw_pdf_val = str(cert_sel.get('raw_pdf', '')).strip()
@@ -2407,7 +2430,6 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             if raw_pdf_val and raw_pdf_val.lower().endswith('.pdf') and not raw_pdf_val.startswith(('http://', 'https://')):
                 nombre_pdf_orig = raw_pdf_val
             else:
-                # Intentar leer el nombre actual directamente de Google Drive
                 id_para_nombre = extraer_id_drive(cert_sel.get('link_pdf')) or extraer_id_drive(raw_pdf_val)
                 if drv and id_para_nombre:
                     try:
@@ -2418,7 +2440,6 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                     except Exception:
                         pass
 
-            # Si no se pudo obtener de Drive o Historial, reconstruir con el formato original estándar
             if not nombre_pdf_orig:
                 tipo_c = str(cert_sel.get('tipo_cert', 'Comercialización')).strip()
                 tipo_cod = "COM" if "comercializa" in tipo_c.lower() else "SER"
@@ -2431,21 +2452,27 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             c_act_col1, c_act_col2 = st.columns([2, 1])
             with c_act_col1:
                 nombre_pdf_usuario = st.text_input(
-                    "📌 Nombre del archivo PDF unificado:", 
+                    "📌 Nombre del archivo PDF consolidado:", 
                     value=nombre_pdf_orig, 
                     key="input_nombre_pdf_actualizado"
                 )
             with c_act_col2:
                 obs_adicional = st.text_input(
-                    "Observación o motivo del cambio (opcional):", 
-                    placeholder="Ej: Corrección de placa de vehículo", 
+                    "Motivo o detalle de la modificación:", 
+                    placeholder="Ej: Corrección de peso / placa", 
                     key="input_motivo_edicion"
                 )
 
             ya_regenerado = bool(st.session_state.get('act_pdf_final_link'))
             c_reg1, c_reg2 = st.columns([3, 1])
             with c_reg1:
-                btn_ejecutar_act = st.button("✅ Expediente Ya Regenerado y Actualizado" if ya_regenerado else "🚀 Regenerar Expediente y Actualizar Historial", type="primary", disabled=ya_regenerado, use_container_width=True, key="btn_ejecutar_actualizacion_hist")
+                btn_ejecutar_act = st.button(
+                    "✅ Expediente Ya Regenerado y Actualizado" if ya_regenerado else "🚀 Regenerar Expediente Completo y Sincronizar", 
+                    type="primary", 
+                    disabled=ya_regenerado, 
+                    use_container_width=True, 
+                    key="btn_ejecutar_actualizacion_hist"
+                )
             with c_reg2:
                 if ya_regenerado and st.button("🔄 Actualizar Otro", key="btn_reset_act_exp", use_container_width=True):
                     for k in ['act_pdf_final_link', 'act_pdf_final_bytes', 'act_pdf_final_nombre', 'act_nuevo_cert_preview', 'act_res_sigersol']:
@@ -2456,15 +2483,15 @@ elif modulo_actual == "🔄 Actualizar Expediente":
             if btn_ejecutar_act:
                 doc_target = cert_sel.get('link_doc') or cert_sel.get('raw_doc')
                 pdf_target = cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
-                if not pdf_target:
-                    st.error("❌ El registro seleccionado no tiene un enlace ni archivo de PDF unificado en Historial para reemplazar la carátula.")
+                if not doc_target and not subida_local_doc:
+                    st.error("❌ No se encontró el archivo Word en Google Drive ni se adjuntó un archivo local.")
                 else:
-                    with st.spinner("⏳ Limpiando memoria y procesando sustitución quirúrgica..."):
+                    with st.spinner("⏳ Procesando cambios: Descargando de Google Drive, convirtiendo a PDF y regenerando expediente completo..."):
                         try:
-                            # 0. Limpiar caché inmediatamente
+                            # 0. Limpiar memoria caché
                             st.cache_data.clear()
 
-                            # 1. Obtener los bytes del nuevo certificado en PDF y Word
+                            # 1. Obtener bytes del nuevo certificado en PDF y Word
                             docx_bytes_act = None
                             if subida_local_doc:
                                 nombre_subido = subida_local_doc.name.lower()
@@ -2482,65 +2509,92 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                     nuevo_cert_pdf_bytes = convertir_docx_a_pdf(docx_bytes_act)
                                 st.toast("✅ Certificado cargado desde archivo local.")
                             else:
-                                if not doc_target:
-                                    raise Exception("No se encontró el archivo Word en Drive ni se subió un archivo local.")
                                 doc_drive_io = descargar_archivo_drive_por_id_o_nombre(drv, doc_target)
                                 if not doc_drive_io:
                                     raise Exception(f"No se pudo descargar el documento Word '{doc_target}' desde Google Drive.")
                                 docx_bytes_act = doc_drive_io.getvalue()
                                 nuevo_cert_pdf_bytes = convertir_docx_a_pdf(docx_bytes_act)
-                                st.toast("✅ Versión actualizada del Word descargada de Google Drive.")
+                                st.toast("✅ Versión actualizada descargada de Google Docs y convertida a PDF.")
 
                             if not nuevo_cert_pdf_bytes:
-                                raise Exception("Falló la conversión del nuevo certificado a PDF.")
+                                raise Exception("Falló la conversión del certificado editado a PDF.")
 
-                            # 2. Descargar el PDF unificado actual de Drive
-                            pdf_unido_io = descargar_archivo_drive_por_id_o_nombre(drv, pdf_target)
-                            if not pdf_unido_io:
-                                raise Exception(f"No se pudo descargar el PDF consolidado '{pdf_target}' desde Google Drive.")
+                            # 2. Regenerar el expediente completo
+                            pdf_expediente_final_bytes = None
 
-                            pdf_unido_existente_bytes = pdf_unido_io.getvalue()
+                            # Caso A: Si ya existía un PDF consolidado previo en Historial o Drive:
+                            # Sustituir quirúrgicamente la primera página con el nuevo certificado,
+                            # conservando intactas todas las páginas posteriores (guías de remisión, transporte o sustentos Petramás).
+                            if pdf_target:
+                                try:
+                                    pdf_unido_io = descargar_archivo_drive_por_id_o_nombre(drv, pdf_target)
+                                    if pdf_unido_io:
+                                        pdf_expediente_final_bytes = sustituir_certificado_en_pdf(
+                                            pdf_unido_io.getvalue(),
+                                            nuevo_cert_pdf_bytes,
+                                            num_paginas_reemplazar=1
+                                        )
+                                        st.toast("✅ Expediente consolidado existente regenerado con la nueva carátula en Página 1.")
+                                except Exception as e_sust:
+                                    print(f"Aviso sustitución carátula en PDF existente: {e_sust}")
 
-                            # 3. Sustituir quirúrgicamente la carátula conservando las guías
-                            pdf_actualizado_bytes = sustituir_certificado_en_pdf(
-                                pdf_unido_existente_bytes, 
-                                nuevo_cert_pdf_bytes, 
-                                num_paginas_reemplazar=1
-                            )
+                            # Caso B: Si no había PDF consolidado previo, ensamblar el expediente con las guías
+                            if not pdf_expediente_final_bytes:
+                                guias_asoc = [g.strip().upper() for g in str(cert_sel.get('guias', '')).split(',') if g.strip()]
+                                asociadas = buscar_guias_asociadas_para_unir(sht, drv, guias_asoc) if guias_asoc else []
+                                guias_validas = [g for g in asociadas if g.get('valida')]
 
-                            # 4. Actualizar en Google Drive (sobreescritura in-place para conservar el mismo link público y nombre original)
-                            file_id_pdf = extraer_id_drive(cert_sel.get('link_pdf')) if str(cert_sel.get('link_pdf', '')).startswith(('http://', 'https://')) else extraer_id_drive(cert_sel.get('raw_pdf'))
+                                if guias_validas:
+                                    g_val = guias_validas[0]
+                                    arch_rem_io = descargar_archivo_drive_por_id_o_nombre(drv, g_val.get('archivo_remision')) if g_val.get('archivo_remision') else None
+                                    arch_trans_io = descargar_archivo_drive_por_id_o_nombre(drv, g_val.get('archivo_transporte')) if g_val.get('archivo_transporte') else None
+                                    pdf_expediente_final_bytes = unir_tres_documentos_pdf(docx_bytes_act or nuevo_cert_pdf_bytes, arch_rem_io, arch_trans_io)
+                                    st.toast("✅ Expediente completo ensamblado (Certificado + Guía Remisión + Guía Transporte).")
+                                else:
+                                    # Si no se detectaron guías anexas en Drive, se toma el certificado PDF con los cambios
+                                    pdf_expediente_final_bytes = nuevo_cert_pdf_bytes
+                                    st.toast("✅ Certificado PDF generado con éxito.")
+
+                            # 3. Guardar el PDF en la carpeta exacta donde se guarda el Docs
+                            carpeta_docs = obtener_carpeta_padre_archivo_drive(drv, doc_target) or carpeta_empresa_act
+                            file_id_pdf_existente = extraer_id_drive(cert_sel.get('link_pdf')) if str(cert_sel.get('link_pdf', '')).startswith(('http://', 'https://')) else extraer_id_drive(cert_sel.get('raw_pdf'))
+
                             nombre_final_pdf = nombre_pdf_usuario.strip() if nombre_pdf_usuario else nombre_pdf_orig
                             if not nombre_final_pdf.lower().endswith('.pdf'):
                                 nombre_final_pdf += '.pdf'
-                            
-                            nuevo_link_drive = sobrescribir_o_subir_pdf_drive(
-                                drv, 
-                                file_id_pdf, 
-                                pdf_actualizado_bytes, 
-                                nombre_archivo=nombre_final_pdf, 
-                                tipo_flujo=cert_sel.get('tipo_cert', 'Comercialización')
+
+                            nuevo_link_drive, nuevo_id_pdf = guardar_pdf_en_carpeta_docs(
+                                servicio_drive=drv,
+                                pdf_bytes=pdf_expediente_final_bytes,
+                                nombre_archivo=nombre_final_pdf,
+                                file_id_docs=doc_target,
+                                file_id_pdf_existente=file_id_pdf_existente,
+                                tipo_flujo=cert_sel.get('tipo_cert', 'Comercialización'),
+                                carpeta_fallback_id=carpeta_docs
                             )
 
-                            # 5. Registrar auditoría en la pestaña correspondiente de Historial
+                            # 4. Actualizar Sheet de Control (Pestaña correspondiente, Columna I y Columna J)
                             usuario_editor = st.session_state.get('usuario_email', 'Usuario')
                             link_para_historial = nuevo_link_drive or cert_sel.get('link_pdf') or cert_sel.get('raw_pdf')
-                            hoja_hist_edicion = cert_sel.get('hoja_historial', 'Historial')
+                            obs_registro = f"Expediente regenerado por {usuario_editor} con cambios en Docs y Sigersol"
+                            if obs_adicional:
+                                obs_registro += f" | {obs_adicional}"
+
                             registrar_edicion_en_historial(
-                                sht, 
-                                cert_sel['fila'], 
-                                link_para_historial, 
-                                usuario_editor=usuario_editor, 
-                                obs_extra=obs_adicional,
-                                hoja_destino=hoja_hist_edicion
+                                sht,
+                                cert_sel['fila'],
+                                link_para_historial,
+                                usuario_editor=usuario_editor,
+                                obs_extra=obs_registro,
+                                hoja_destino=hoja_destino_act
                             )
 
-                            # 6. Sincronizar automáticamente cambios con SIGERSOL
+                            # 5. Sincronizar automáticamente cambios con SIGERSOL correspondiente
                             try:
                                 from src.services.sigersol_service import sincronizar_certificado_editado_a_sigersol
                                 res_sig_act = sincronizar_certificado_editado_a_sigersol(
                                     docx_bytes=docx_bytes_act,
-                                    pdf_bytes=nuevo_cert_pdf_bytes,
+                                    pdf_bytes=pdf_expediente_final_bytes,
                                     cert_historial=cert_sel
                                 )
                                 st.session_state['act_res_sigersol'] = res_sig_act
@@ -2551,16 +2605,16 @@ elif modulo_actual == "🔄 Actualizar Expediente":
                                 print(f"Error sincronizando Sigersol al actualizar expediente: {e_sig_act}")
                                 st.session_state['act_res_sigersol'] = {"ok": False, "error": str(e_sig_act)}
 
-                            st.session_state['act_pdf_final_bytes'] = pdf_actualizado_bytes
+                            st.session_state['act_pdf_final_bytes'] = pdf_expediente_final_bytes
                             st.session_state['act_pdf_final_link'] = link_para_historial
                             st.session_state['act_pdf_final_nombre'] = nombre_final_pdf
                             st.session_state['act_nuevo_cert_preview'] = nuevo_cert_pdf_bytes
-                            
+
                             st.cache_data.clear()
-                            st.success("✅ ¡Expediente actualizado exitosamente en Google Drive y registrado en la pestaña Historial!")
+                            st.success("✅ ¡Expediente regenerado exitosamente, guardado en la carpeta de Google Drive y registrado en el Sheet de Control y Sigersol!")
                             st.balloons()
                         except Exception as e_proc:
-                            st.error(f"❌ Error durante la actualización del expediente: {e_proc}")
+                            st.error(f"❌ Error durante la regeneración del expediente: {e_proc}")
 
             if st.session_state.get('act_pdf_final_link'):
                 st.markdown(f"📄 **Expediente PDF Actualizado:** [Ver en Google Drive]({st.session_state['act_pdf_final_link']})")

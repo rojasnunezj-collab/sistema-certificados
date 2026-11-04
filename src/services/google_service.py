@@ -1083,8 +1083,44 @@ def es_guia_valida_para_unir(observacion):
             return False
     return True
 
-def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
-    """Obtiene el enlace webViewLink de un archivo en Drive por ID o nombre."""
+def obtener_carpeta_padre_archivo_drive(servicio_drive, file_id_o_nombre):
+    """
+    Obtiene el ID de la carpeta contenedora (parent) de un archivo en Google Drive.
+    """
+    import re
+    if not servicio_drive or not file_id_o_nombre:
+        return None
+    try:
+        f_id = extraer_id_drive(file_id_o_nombre)
+        es_posible_id = (f_id != file_id_o_nombre) or (re.match(r'^[a-zA-Z0-9_-]{25,65}$', str(file_id_o_nombre).strip()) is not None)
+        if not es_posible_id:
+            # Buscar por nombre
+            res = servicio_drive.files().list(
+                q=f"name = '{file_id_o_nombre}' and trashed = false",
+                fields="files(id, parents)",
+                pageSize=1,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
+            files = res.get('files', [])
+            if files and files[0].get('parents'):
+                return files[0]['parents'][0]
+            return None
+
+        meta = servicio_drive.files().get(
+            fileId=f_id,
+            fields='id, parents',
+            supportsAllDrives=True
+        ).execute()
+        parents = meta.get('parents', [])
+        if parents:
+            return parents[0]
+    except Exception as e:
+        print(f"Aviso al obtener carpeta contenedora en Drive ({file_id_o_nombre}): {e}")
+    return None
+
+def obtener_link_archivo_drive(servicio_drive, nombre_archivo, carpeta_id=None):
+    """Obtiene el enlace webViewLink de un archivo en Drive por ID o nombre, con filtro opcional por carpeta."""
     import re
     if not servicio_drive or not nombre_archivo:
         return None
@@ -1095,7 +1131,10 @@ def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
             meta = servicio_drive.files().get(fileId=archivo_id, fields='webViewLink', supportsAllDrives=True).execute()
             return meta.get('webViewLink')
         else:
-            query = f"name contains '{nombre_archivo}' and trashed=false"
+            if carpeta_id:
+                query = f"'{carpeta_id}' in parents and name contains '{nombre_archivo}' and trashed=false"
+            else:
+                query = f"name contains '{nombre_archivo}' and trashed=false"
             res = servicio_drive.files().list(
                 q=query, 
                 spaces='drive', 
@@ -1107,6 +1146,19 @@ def obtener_link_archivo_drive(servicio_drive, nombre_archivo):
             items = res.get('files', [])
             if items:
                 return items[0].get('webViewLink')
+            elif carpeta_id:
+                # Reintento sin filtro de carpeta por si fue movido
+                res2 = servicio_drive.files().list(
+                    q=f"name contains '{nombre_archivo}' and trashed=false",
+                    spaces='drive',
+                    corpora='allDrives',
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
+                    fields='files(id, webViewLink)'
+                ).execute()
+                items2 = res2.get('files', [])
+                if items2:
+                    return items2[0].get('webViewLink')
     except Exception as e:
         print(f"Error obteniendo link Drive para {nombre_archivo}: {e}")
     return None
@@ -1648,15 +1700,14 @@ def obtener_catalogo_servicios_por_categoria(df_servicios):
 
     return secciones
 
-def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio_drive=None, hoja_destino="Historial"):
+def buscar_datos_certificado_en_historial(servicio_sheets, correlativo=None, servicio_drive=None, hoja_destino="Historial", carpeta_empresa_id=None, limite=100):
     """
-    Busca certificados en la pestaña de historial especificada por número correlativo.
-    Soporta formatos numéricos ('45' encuentra '045') o coincidencia de texto.
+    Busca certificados en la pestaña de historial especificada por número correlativo o texto.
+    Si correlativo es None o vacío, retorna los certificados más recientes hasta el límite indicado.
     Si se proporciona servicio_drive, resuelve automáticamente los enlaces web (webViewLink)
-    de Drive en caso de que en la celda solo figure el nombre del archivo.
-    Retorna una lista de diccionarios con la información completa de cada coincidencia.
+    de Drive utilizando la carpeta de la empresa para evitar confusiones de nombres.
     """
-    if not servicio_sheets or not correlativo:
+    if not servicio_sheets:
         return []
     try:
         r = servicio_sheets.spreadsheets().values().get(
@@ -1667,7 +1718,7 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
         if len(filas) < 2:
             return []
 
-        corr_query = str(correlativo).strip().upper()
+        corr_query = str(correlativo).strip().upper() if correlativo is not None else ""
         corr_num = None
         if corr_query.isdigit():
             corr_num = int(corr_query)
@@ -1676,14 +1727,22 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
         for idx, row in enumerate(filas[1:]):
             num_fila = idx + 2
             corr_row = str(row[3]).strip().upper() if len(row) > 3 else ""
+            empresa_row = str(row[1]).strip().upper() if len(row) > 1 else ""
+            fundo_row = str(row[2]).strip().upper() if len(row) > 2 else ""
+            guia_row = str(row[5]).strip().upper() if len(row) > 5 else ""
             
             match = False
-            if corr_row and corr_row == corr_query:
+            if not corr_query:
+                # Sin filtro de búsqueda: devolver todas las filas para que la UI muestre el listado reciente
+                match = True
+            elif corr_row and corr_row == corr_query:
                 match = True
             elif corr_num is not None and corr_row.isdigit() and int(corr_row) == corr_num:
                 match = True
-            elif corr_query and corr_query in corr_row:
-                match = True
+            elif corr_query:
+                # Búsqueda flexible por correlativo o nombre de cliente/guía
+                if corr_query in corr_row or corr_query in empresa_row or corr_query in fundo_row or corr_query in guia_row:
+                    match = True
 
             if match:
                 raw_guia = str(row[6]).strip() if len(row) > 6 else ""
@@ -1693,14 +1752,14 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
                 url_doc = raw_doc
                 if raw_doc and not raw_doc.startswith(('http://', 'https://')):
                     if servicio_drive:
-                        link_d = obtener_link_archivo_drive(servicio_drive, raw_doc)
+                        link_d = obtener_link_archivo_drive(servicio_drive, raw_doc, carpeta_id=carpeta_empresa_id)
                         if link_d:
                             url_doc = link_d
 
                 url_pdf = raw_pdf
                 if raw_pdf and not raw_pdf.startswith(('http://', 'https://')):
                     if servicio_drive:
-                        link_p = obtener_link_archivo_drive(servicio_drive, raw_pdf)
+                        link_p = obtener_link_archivo_drive(servicio_drive, raw_pdf, carpeta_id=carpeta_empresa_id)
                         if link_p:
                             url_pdf = link_p
 
@@ -1721,10 +1780,77 @@ def buscar_datos_certificado_en_historial(servicio_sheets, correlativo, servicio
                     "hoja_historial": hoja_destino
                 })
 
+        if not corr_query and len(resultados) > limite:
+            return list(reversed(resultados))[:limite]
         return resultados
     except Exception as e:
-        print(f"Error buscando datos de certificado en Historial: {e}")
+        print(f"Error buscando datos de certificado en Historial ({hoja_destino}): {e}")
         return []
+
+def guardar_pdf_en_carpeta_docs(servicio_drive, pdf_bytes, nombre_archivo, file_id_docs=None, file_id_pdf_existente=None, tipo_flujo="Comercialización", carpeta_fallback_id=None):
+    """
+    Guarda o actualiza el archivo PDF en Google Drive exactamente en la carpeta
+    donde está alojado el archivo Google Docs/Word asociado.
+    Si ya existía el PDF en Drive, intenta actualización in-place para preservar URL y permisos.
+    Retorna tupla: (link_pdf, file_id_pdf)
+    """
+    import io
+    from googleapiclient.http import MediaIoBaseUpload
+
+    if not servicio_drive:
+        return None, None
+
+    # 1. Resolver carpeta contenedora del Docs
+    carpeta_destino = None
+    if file_id_docs:
+        try:
+            carpeta_destino = obtener_carpeta_padre_archivo_drive(servicio_drive, file_id_docs)
+        except Exception as e_p:
+            print(f"Aviso obteniendo carpeta del Docs: {e_p}")
+    if not carpeta_destino:
+        carpeta_destino = carpeta_fallback_id
+
+    nom_pdf = nombre_archivo.strip() if nombre_archivo else "Expediente.pdf"
+    if not nom_pdf.lower().endswith('.pdf'):
+        nom_pdf += '.pdf'
+
+    # 2. Intentar actualización in-place si ya existe el PDF en Drive
+    if file_id_pdf_existente:
+        try:
+            media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
+            res_up = servicio_drive.files().update(
+                fileId=file_id_pdf_existente,
+                body={'name': nom_pdf},
+                media_body=media,
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+            link = res_up.get('webViewLink')
+            if link:
+                return link, file_id_pdf_existente
+        except Exception as e_up:
+            print(f"Aviso: Falló actualización in-place de PDF ({e_up}). Se creará en la carpeta del Docs.")
+
+    # 3. Subir como nuevo archivo en la carpeta del Docs
+    try:
+        body = {
+            'name': nom_pdf,
+            'mimeType': 'application/pdf'
+        }
+        if carpeta_destino:
+            body['parents'] = [carpeta_destino]
+
+        media = MediaIoBaseUpload(io.BytesIO(pdf_bytes), mimetype='application/pdf', resumable=True)
+        res_new = servicio_drive.files().create(
+            body=body,
+            media_body=media,
+            fields='id, name, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        return res_new.get('webViewLink'), res_new.get('id')
+    except Exception as e_cr:
+        print(f"Error creando PDF en carpeta del Docs ({carpeta_destino}): {e_cr}")
+        return None, None
 
 def sobrescribir_o_subir_pdf_drive(servicio_drive, file_id_existente, contenido_bytes, nombre_archivo="Expediente.pdf", tipo_flujo="Comercialización", carpeta_id=None):
     """

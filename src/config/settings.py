@@ -21,7 +21,8 @@ SHEETS_SIGERSOL = {
     "EPMI S.A.C.": os.getenv("ID_SHEET_SIGERSOL_EPMI", ID_SHEET_SIGERSOL),
     "INECOVE S.A.C.": os.getenv("ID_SHEET_SIGERSOL_INECOVE", ID_SHEET_SIGERSOL),
     "TRANSPORT & SERVICE ALHUAY S.A.C.": os.getenv("ID_SHEET_SIGERSOL_ALHUAY", "1n-MhXvCAPDSc4Rj1azoM40f5bjTvoXyiTi9mn_CNgL8"),
-    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": os.getenv("ID_SHEET_SIGERSOL_PP", "1W7Exc6knTkmzckbHeqw-J9KCitrga-Mc35S9kGd7gWk")
+    "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": os.getenv("ID_SHEET_SIGERSOL_PP", "1W7Exc6knTkmzckbHeqw-J9KCitrga-Mc35S9kGd7gWk"),
+    "RENOVA RECICLAJE S.A.C.": os.getenv("ID_SHEET_SIGERSOL_RENOVA", "1BkT74AHbS71pSK-o25RmZNp5pH0o1f2R5qUyUMHVfwY")
 }
 
 # Carpetas de Google Drive para Guías (Hechas y Recibidas) por Empresa
@@ -57,17 +58,20 @@ CARPETAS_PETRAMAS = {
     "certificados": {
         "EPMI S.A.C.": "1qn4ASHsBzj8vJKc2JVoXH-qJKCh9a6ku",
         "INECOVE S.A.C.": "14Jz6yiTjqp-jTG2W_OKbsnR_zE6v7fcc",
-        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1cdGN3HtIhyDuHc4yodZew0UdDYv2Qn89"
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1cdGN3HtIhyDuHc4yodZew0UdDYv2Qn89",
+        "RENOVA RECICLAJE S.A.C.": "1XhU_OJueteQ7581aLpa5txn88VSbKodJ"
     },
     "sustentos": {
         "EPMI S.A.C.": "1CMe0hTVCN5kfNxbJ0575Br6AnRFKJ0R_",
         "INECOVE S.A.C.": "1OZGDSpMcmbTp1ySWJumMJdXToaUNOysB",
-        "TRANSPORT & SERVICE ALHUAY S.A.C.": "134k-n-yXMm-VFdxViZIgkDEV7M0VIz90"
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "134k-n-yXMm-VFdxViZIgkDEV7M0VIz90",
+        "RENOVA RECICLAJE S.A.C.": "1osFF6cmpi86FSD-NhNU6xRr_qFWjO0Nf"
     },
     "expedientes": {
         "EPMI S.A.C.": "1f4QTNEeN6lC31NYAe9cLaE2g91-gU3H1",
         "INECOVE S.A.C.": "1xdPgXvI7cwgl9tKaR7gzKPBorlblQj_H",
-        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1mJwsQWRSAWBVHt_CDUPPz6Sh8oBBUVaY"
+        "TRANSPORT & SERVICE ALHUAY S.A.C.": "1mJwsQWRSAWBVHt_CDUPPz6Sh8oBBUVaY",
+        "RENOVA RECICLAJE S.A.C.": "1e6CWTpuBcQtrLznHxUAQhGrGaXkMyCSj"
     }
 }
 
@@ -96,6 +100,12 @@ EMPRESAS_EORS = {
         "hoja_historial": "Historial_P&P",
         "prefijo_cert": "CERT-SER",
         "alias": ["P&P", "P&P INVERSIONES", "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C."]
+    },
+    "RENOVA RECICLAJE S.A.C.": {
+        "ruc": "20612715514",
+        "hoja_historial": "Historial_RENOVA_RECICLAJE",
+        "prefijo_cert": "CERT-SER",
+        "alias": ["RENOVA", "RENOVA RECICLAJE", "RENOVA RECICLAJE S.A.C."]
     }
 }
 
@@ -116,6 +126,10 @@ CARPETAS_DESTINO = {
     },
     "P&P INVERSIONES COMERCIALES Y AMBIENTALES S.A.C.": {
         "Comercialización": "17Sbpo1NfzCuIqBqwB8kZpyo-ygP2bzsg"
+    },
+    "RENOVA RECICLAJE S.A.C.": {
+        "Comercialización": "1L6ZXWZ_gLNGx_hmZ_gRfxOHStfJG1245",
+        "Disposición Final 1": "1hgV7WGC9YyL03JYfaeS7-nhkYRcAQyPi"
     }
 }
 

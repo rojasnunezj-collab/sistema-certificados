@@ -84,6 +84,12 @@ MEDIDAS_REFERENCIA_FIRMAS = {
         'cy': 1030891,
         'pos_h': 3533775,
         'pos_v': 473040,
+    },
+    'firma_centro': {
+        'cx': 1746022,
+        'cy': 1085941,
+        'pos_h': 2430409,
+        'pos_v': 420000,
     }
 }
 
@@ -187,8 +193,21 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
                     p.paragraph_format.space_after = Pt(0)
                     p.paragraph_format.line_spacing = Pt(2)
 
-        # 6. Obtener dibujos y ordenarlos de izquierda a derecha según su posH
-        drawings = sig_p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        # 6. Obtener dibujos y filtrar únicamente firmas válidas (alto > 20 pt y < 4,000,000 EMUs)
+        all_drawings = sig_p._element.findall('.//{http://schemas.openxmlformats.org/wordprocessingml/2006/main}drawing')
+        drawings = []
+        for d in all_drawings:
+            ext = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}extent')
+            if ext is not None:
+                try:
+                    cy = int(ext.get('cy', 0))
+                    if 254000 < cy < 4000000:
+                        drawings.append(d)
+                except (ValueError, TypeError):
+                    pass
+
+        if not drawings:
+            return
         
         def get_pos_h(d):
             posH = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionH')
@@ -203,9 +222,12 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
 
         drawings.sort(key=get_pos_h)
 
-        configs = [MEDIDAS_REFERENCIA_FIRMAS['firma_izq'], MEDIDAS_REFERENCIA_FIRMAS['firma_der']]
+        if len(drawings) == 1:
+            configs = [MEDIDAS_REFERENCIA_FIRMAS['firma_centro']]
+        else:
+            configs = [MEDIDAS_REFERENCIA_FIRMAS['firma_izq'], MEDIDAS_REFERENCIA_FIRMAS['firma_der']]
 
-        for idx, d in enumerate(drawings[:2]):
+        for idx, d in enumerate(drawings[:len(configs)]):
             cfg = configs[idx]
 
             # Eliminar márgenes de envoltura en anchor
@@ -213,12 +235,18 @@ def ajustar_posicion_y_tamano_firmas(doc, num_items):
                 anchor.set('distT', '0')
                 anchor.set('distB', '0')
 
-            # Posición horizontal predeterminada (posOffset en column)
+            # Posición horizontal calibrada (posOffset en column)
             posH = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionH')
             if posH is not None:
                 off = posH.find('{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}posOffset')
                 if off is not None:
-                    off.text = str(cfg['pos_h'])
+                    if len(drawings) == 1:
+                        # Centrado dinámico respecto al eje de columna (3303420 EMUs)
+                        ancho_escalado = int(cfg['cx'] * scale)
+                        pos_h_centro = 3303420 - (ancho_escalado // 2)
+                        off.text = str(pos_h_centro)
+                    else:
+                        off.text = str(cfg['pos_h'])
 
             # Distancia vertical predeterminada respecto al párrafo (posOffset en paragraph)
             posV = d.find('.//{http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing}positionV')
