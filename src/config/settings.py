@@ -129,9 +129,13 @@ PLANTILLAS = {
         "Disposición Final 2": "1fpdZef3Fe3tl00yAuM0Cehx2_o3AusrErcOJisBtdBM"
     },
     "INECOVE S.A.C.": {
-        "Comercialización": os.getenv("TEMPLATE_INECOVE_ID", "1MPzCwxR538osP3_br4VrTDybplqpTBtB08Jo"),
-        "Disposición Final 1": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1W-HyVSivqug13gBRBclBuICAOSBUHm1WN5cnqtMQcZY"),
-        "Disposición Final 2": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1W-HyVSivqug13gBRBclBuICAOSBUHm1WN5cnqtMQcZY")
+        "Comercialización": os.getenv("TEMPLATE_INECOVE_ID", "1MPzCwxR538osP3_BveVrr_br4VrTDybplqpTBtB08Jo"),
+        "Disposición Final 1": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1UC1E9UP4_UL79MIMNU5xI1nYdbddGZNI4W-kBYlbs1A"),
+        "Disposición Final 2": os.getenv("TEMPLATE_INECOVE_PELIGROSO_ID", "1UC1E9UP4_UL79MIMNU5xI1nYdbddGZNI4W-kBYlbs1A")
+    },
+    "RENOVA RECICLAJE S.A.C.": {
+        "Comercialización": "1rdSNCCZkZuX2zA40emDaHaUoBWhhbMr3KIefHBJoCh0",
+        "Disposición Final 1": "1X0VrQ8M-6voT0FTEV7mk0kLmzyt3XG-HyPGljIYX7KI"
     },
     "TRANSPORT & SERVICE ALHUAY S.A.C.": {
         "Disposición Final 1": "1pNvIbFugtCqDxCk0nMgDh3hEHyk75lKgDz_ILU9_ayM"

@@ -251,17 +251,19 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
                 id_p = next(iter(cfg_emisor['plantillas'].values()))
                 
             if id_p:
-                f_meta = drive_service.files().get(fileId=id_p, fields='mimeType').execute()
+                f_meta = drive_service.files().get(fileId=id_p, fields='mimeType', supportsAllDrives=True).execute()
                 m_type = f_meta.get('mimeType', '')
                 if 'application/vnd.google-apps.document' in m_type:
                     req = drive_service.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
                 else:
-                    req = drive_service.files().get_media(fileId=id_p)
+                    req = drive_service.files().get_media(fileId=id_p, supportsAllDrives=True)
                     
                 fh = io.BytesIO()
                 dl = MediaIoBaseDownload(fh, req)
                 done = False
                 while not done: _, done = dl.next_chunk()
+                from src.utils.document_utils import sanitizar_tags_docx
+                fh = sanitizar_tags_docx(fh)
                 fh.seek(0)
                 return fh
         except Exception as e_cfg:
@@ -305,6 +307,8 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
     while done is False:
         status, done = downloader.next_chunk()
         
+    from src.utils.document_utils import sanitizar_tags_docx
+    fh = sanitizar_tags_docx(fh)
     fh.seek(0)
     return fh
 
@@ -1773,4 +1777,4 @@ def registrar_edicion_en_historial(servicio_sheets, num_fila, link_pdf, usuario_
     except Exception as e:
         print(f"Error registrando edición en {hoja_destino}: {e}")
         return False
-
+

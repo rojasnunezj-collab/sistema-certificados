@@ -64,7 +64,7 @@ except Exception:
     pass
 
 from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
-from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf
+from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf, sanitizar_tags_docx
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
     limpiar_descripcion, formatear_guia, limpiar_guia_o_factura, obtener_fin_de_mes,
@@ -874,32 +874,80 @@ if modulo_actual == "📄 Generador de Certificados":
         st.session_state['form_dest'] = v_dest
 
         # Inicializar configuración de columnas si no existe
-        if 'tabla_columnas_config' not in st.session_state:
+        if 'tabla_columnas_config' not in st.session_state or not isinstance(st.session_state.get('tabla_columnas_config'), list):
             st.session_state['tabla_columnas_config'] = [c.copy() for c in DEFAULT_COLUMNAS_CONFIG]
 
-        # Panel para Editar Encabezados y Eliminar Columnas
-        with st.expander("🛠️ Personalizar Encabezados y Columnas de la Tabla (Editar / Eliminar)", expanded=False):
-            st.markdown("💡 *Edita los nombres de los encabezados o elimina columnas. La tabla en pantalla y el Certificado Word se generarán únicamente con las columnas restantes y los nombres configurados.*")
+        # Panel para Mover, Editar Encabezados y Eliminar Columnas
+        with st.expander("🛠️ Personalizar Columnas y Encabezados (Mover / Editar / Eliminar)", expanded=False):
+            st.markdown("💡 *Edita los nombres de los encabezados, reordena las columnas con las flechas ⬅️ / ➡️ o elimina las que no necesites. La tabla interactiva y el Certificado Word se generarán respetando el orden y los nombres configurados.*")
             
             cols_activas = st.session_state['tabla_columnas_config']
             col_a_borrar = None
+            col_a_mover_izq = None
+            col_a_mover_der = None
+            cambio_encabezado = False
+            
+            # Encabezado guía de las acciones
+            h_c1, h_c2, h_c3, h_c4, h_c5 = st.columns([1.6, 3.2, 0.6, 0.6, 0.8])
+            with h_c1:
+                st.caption("**ID Columna**")
+            with h_c2:
+                st.caption("**Nombre en Encabezado**")
+            with h_c3:
+                st.caption("**Izq.**")
+            with h_c4:
+                st.caption("**Der.**")
+            with h_c5:
+                st.caption("**Quitar**")
             
             for idx_c, col_cfg in enumerate(cols_activas):
-                col_c1, col_c2, col_c3 = st.columns([1.5, 3, 1])
+                col_c1, col_c2, col_c3, col_c4, col_c5 = st.columns([1.6, 3.2, 0.6, 0.6, 0.8])
                 with col_c1:
-                    st.markdown(f"**Columna {idx_c + 1}:** `{col_cfg['id']}`")
+                    st.markdown(f"**Col. {idx_c + 1}:** `{col_cfg['id']}`")
                 with col_c2:
                     nuevo_hdr = st.text_input(
                         f"Encabezado para {col_cfg['id']}", 
-                        value=col_cfg['nombre'], 
+                        value=col_cfg.get('nombre', col_cfg.get('id', '')), 
                         key=f"hdr_txt_{col_cfg['id']}",
                         label_visibility="collapsed"
                     )
-                    if nuevo_hdr != col_cfg['nombre']:
+                    if nuevo_hdr != col_cfg.get('nombre'):
+                        if st.session_state.get('v_items_working') is not None:
+                            st.session_state['df_items'] = st.session_state['v_items_working'].copy()
                         col_cfg['nombre'] = nuevo_hdr
+                        cambio_encabezado = True
                 with col_c3:
-                    if st.button("🗑️ Eliminar", key=f"btn_del_col_{col_cfg['id']}", help=f"Eliminar la columna '{col_cfg['nombre']}' de la tabla"):
+                    if st.button("⬅️", key=f"btn_mv_left_{col_cfg['id']}", disabled=(idx_c == 0), help=f"Mover '{col_cfg.get('nombre')}' hacia la izquierda"):
+                        col_a_mover_izq = idx_c
+                with col_c4:
+                    if st.button("➡️", key=f"btn_mv_right_{col_cfg['id']}", disabled=(idx_c == len(cols_activas) - 1), help=f"Mover '{col_cfg.get('nombre')}' hacia la derecha"):
+                        col_a_mover_der = idx_c
+                with col_c5:
+                    if st.button("🗑️", key=f"btn_del_col_{col_cfg['id']}", help=f"Eliminar la columna '{col_cfg.get('nombre')}' de la tabla"):
                         col_a_borrar = col_cfg['id']
+
+            if cambio_encabezado:
+                st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+                st.toast("✅ Encabezado actualizado.")
+                st.rerun()
+
+            if col_a_mover_izq is not None and col_a_mover_izq > 0:
+                if st.session_state.get('v_items_working') is not None:
+                    st.session_state['df_items'] = st.session_state['v_items_working'].copy()
+                idx_prev = col_a_mover_izq - 1
+                cols_activas[col_a_mover_izq], cols_activas[idx_prev] = cols_activas[idx_prev], cols_activas[col_a_mover_izq]
+                st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+                st.toast("✅ Columna movida hacia la izquierda.")
+                st.rerun()
+
+            if col_a_mover_der is not None and col_a_mover_der < len(cols_activas) - 1:
+                if st.session_state.get('v_items_working') is not None:
+                    st.session_state['df_items'] = st.session_state['v_items_working'].copy()
+                idx_next = col_a_mover_der + 1
+                cols_activas[col_a_mover_der], cols_activas[idx_next] = cols_activas[idx_next], cols_activas[col_a_mover_der]
+                st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+                st.toast("✅ Columna movida hacia la derecha.")
+                st.rerun()
 
             if col_a_borrar:
                 if len(cols_activas) <= 1:
@@ -932,15 +980,20 @@ if modulo_actual == "📄 Generador de Certificados":
                             if st.session_state.get('v_items_working') is not None:
                                 st.session_state['df_items'] = st.session_state['v_items_working'].copy()
                             item_res = next(c.copy() for c in DEFAULT_COLUMNAS_CONFIG if c['id'] == col_sel_res)
+                            st.session_state.pop(f"hdr_txt_{col_sel_res}", None)
                             st.session_state['tabla_columnas_config'].append(item_res)
                             st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+                            st.toast("✅ Columna restaurada.")
                             st.rerun()
             with c_rest2:
                 if st.button("🔄 Restablecer Predeterminados", key="btn_reset_default_cols", help="Restaura las 7 columnas originales con sus nombres por defecto"):
                     if st.session_state.get('v_items_working') is not None:
                         st.session_state['df_items'] = st.session_state['v_items_working'].copy()
+                    for c_def in DEFAULT_COLUMNAS_CONFIG:
+                        st.session_state.pop(f"hdr_txt_{c_def['id']}", None)
                     st.session_state['tabla_columnas_config'] = [c.copy() for c in DEFAULT_COLUMNAS_CONFIG]
                     st.session_state['editor_version'] = st.session_state.get('editor_version', 0) + 1
+                    st.toast("✅ Columnas restablecidas a valores predeterminados.")
                     st.rerun()
 
         cols_activas = st.session_state['tabla_columnas_config']
@@ -951,10 +1004,11 @@ if modulo_actual == "📄 Generador de Certificados":
             if cid not in df_items.columns:
                 df_items[cid] = ""
                 
-        # Construir configuración de columnas con los encabezados personalizados
+        # Construir configuración de columnas con los encabezados personalizados usando Column universal
         col_config_editor = {}
         for c in cols_activas:
-            col_config_editor[c['id']] = st.column_config.TextColumn(c['nombre'])
+            nombre_label = str(c.get('nombre', '')).strip() or c['id']
+            col_config_editor[c['id']] = st.column_config.Column(label=nombre_label)
             
         df_para_editor = df_items[ids_activas].copy()
 
@@ -965,12 +1019,14 @@ if modulo_actual == "📄 Generador de Certificados":
 
         v_items_df = st.data_editor(
             df_para_editor,
+            column_order=ids_activas,
             num_rows="dynamic",
             use_container_width=True,
             column_config=col_config_editor,
             key=editor_key
         )
 
+        v_items_df = v_items_df.copy()
         # Limpieza automática de guías y facturas en la tabla de trabajo
         if 'guia_origen' in v_items_df.columns:
             v_items_df['guia_origen'] = v_items_df['guia_origen'].apply(limpiar_guia_o_factura)
@@ -1446,7 +1502,7 @@ if modulo_actual == "📄 Generador de Certificados":
                                 if es_modelo:
                                     from src.services.google_service import obtener_plantilla_drive
                                     fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
-                                    doc = DocxTemplate(fh)
+                                    doc = DocxTemplate(sanitizar_tags_docx(fh))
                                 else:
                                     try:
                                         tipo_flujo_limpio = str(tipo_flujo).strip()
@@ -1462,20 +1518,29 @@ if modulo_actual == "📄 Generador de Certificados":
                                         st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}'.")
                                         st.stop()
                                     
-                                    f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
-                                    m_type = f_meta.get('mimeType', '')
-                                    
-                                    if m_type == 'application/vnd.google-apps.document':
-                                        req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-                                    else:
-                                        req = drive.files().get_media(fileId=id_p)
+                                    try:
+                                        f_meta = drive.files().get(fileId=id_p, fields='mimeType', supportsAllDrives=True).execute()
+                                        m_type = f_meta.get('mimeType', '')
                                         
-                                    fh = io.BytesIO()
-                                    from googleapiclient.http import MediaIoBaseDownload
-                                    dl = MediaIoBaseDownload(fh, req)
-                                    done = False
-                                    while not done: _, done = dl.next_chunk()
-                                    doc = DocxTemplate(io.BytesIO(fh.getvalue()))
+                                        if m_type == 'application/vnd.google-apps.document':
+                                            req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                                        else:
+                                            req = drive.files().get_media(fileId=id_p, supportsAllDrives=True)
+                                            
+                                        fh = io.BytesIO()
+                                        from googleapiclient.http import MediaIoBaseDownload
+                                        dl = MediaIoBaseDownload(fh, req)
+                                        done = False
+                                        while not done: _, done = dl.next_chunk()
+                                        doc = DocxTemplate(sanitizar_tags_docx(fh.getvalue()))
+                                    except Exception as e_tpl_ind:
+                                        from src.services.google_service import descargar_plantilla_en_blanco
+                                        try:
+                                            fh_fb = descargar_plantilla_en_blanco(empresa_firma, tipo_flujo)
+                                            doc = DocxTemplate(sanitizar_tags_docx(fh_fb))
+                                        except Exception:
+                                            st.error(f"❌ Error al obtener la plantilla para '{empresa_firma}' (ID: {id_p}): {e_tpl_ind}")
+                                            st.stop()
                                     
                                 ctx = {
                                     "CORRELATIVO": corr_str, "TITULO": v_tit, "REGISTRO": emisor_reg,
@@ -1614,7 +1679,7 @@ if modulo_actual == "📄 Generador de Certificados":
                     if es_modelo:
                         from src.services.google_service import obtener_plantilla_drive
                         fh = obtener_plantilla_drive(empresa_firma, tipo_flujo, drive)
-                        doc = DocxTemplate(fh)
+                        doc = DocxTemplate(sanitizar_tags_docx(fh))
                     else:
                         try:
                             tipo_flujo_limpio = str(tipo_flujo).strip()
@@ -1630,20 +1695,29 @@ if modulo_actual == "📄 Generador de Certificados":
                             st.error(f"❌ Error Crítico: No se encontró la plantilla '{tipo_flujo_limpio}' para la empresa '{empresa_firma}'.")
                             st.stop()
                         
-                        f_meta = drive.files().get(fileId=id_p, fields='mimeType').execute()
-                        m_type = f_meta.get('mimeType', '')
-                        
-                        if m_type == 'application/vnd.google-apps.document':
-                            req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-                        else:
-                            req = drive.files().get_media(fileId=id_p)
+                        try:
+                            f_meta = drive.files().get(fileId=id_p, fields='mimeType', supportsAllDrives=True).execute()
+                            m_type = f_meta.get('mimeType', '')
                             
-                        fh = io.BytesIO()
-                        from googleapiclient.http import MediaIoBaseDownload
-                        dl = MediaIoBaseDownload(fh, req)
-                        done = False
-                        while not done: _, done = dl.next_chunk()
-                        doc = DocxTemplate(io.BytesIO(fh.getvalue()))
+                            if m_type == 'application/vnd.google-apps.document':
+                                req = drive.files().export_media(fileId=id_p, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                            else:
+                                req = drive.files().get_media(fileId=id_p, supportsAllDrives=True)
+                                
+                            fh = io.BytesIO()
+                            from googleapiclient.http import MediaIoBaseDownload
+                            dl = MediaIoBaseDownload(fh, req)
+                            done = False
+                            while not done: _, done = dl.next_chunk()
+                            doc = DocxTemplate(sanitizar_tags_docx(fh.getvalue()))
+                        except Exception as e_tpl_cons:
+                            from src.services.google_service import descargar_plantilla_en_blanco
+                            try:
+                                fh_fb = descargar_plantilla_en_blanco(empresa_firma, tipo_flujo)
+                                doc = DocxTemplate(sanitizar_tags_docx(fh_fb))
+                            except Exception:
+                                st.error(f"❌ Error al obtener la plantilla para '{empresa_firma}' (ID: {id_p}): {e_tpl_cons}")
+                                st.stop()
                         
                     # Contexto BLINDADO para inyectar en el Word
                     ctx = {
@@ -1668,6 +1742,9 @@ if modulo_actual == "📄 Generador de Certificados":
                         "EMPRESA": emisor_nombre, 
                         "RUC_EMPRESA": emisor_ruc, 
                         "RUC": emisor_ruc,
+                        "REGISTRO_EMISOR": emisor_reg,
+                        "REGISTRO_2": emisor_reg,
+                        "F_EMISION": v_fec_emis,
                         
                         # --- VARIABLES PARA PLANTILLAS MODELO ---
                         "EMISOR": emisor_nombre,        

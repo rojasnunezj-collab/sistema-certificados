@@ -422,3 +422,74 @@ def sustituir_certificado_en_pdf(pdf_unificado_bytes, nuevo_cert_pdf_bytes, num_
     writer.write(out_io)
     out_io.seek(0)
     return out_io.getvalue()
+
+
+def sanitizar_tags_docx(docx_input):
+    """
+    Sanea etiquetas Jinja2 mal formadas con espacios o puntos (ej. {{SERVICIO O COMPRA}},
+    {{RAZON SOCIAL CLIENTE}}, {{F. EMISION}}, {{EMPRESA 2}}) dentro del archivo .docx
+    para prevenir el error: expected token 'end of print statement', got 'O'.
+    
+    Acepta bytes o io.BytesIO y retorna io.BytesIO con las etiquetas normalizadas a identificadores válidos.
+    """
+    import zipfile
+    import re
+
+    if isinstance(docx_input, (bytes, bytearray)):
+        in_buf = io.BytesIO(docx_input)
+    elif hasattr(docx_input, 'getvalue'):
+        in_buf = io.BytesIO(docx_input.getvalue())
+    elif hasattr(docx_input, 'read'):
+        try:
+            docx_input.seek(0)
+        except Exception:
+            pass
+        in_buf = io.BytesIO(docx_input.read())
+    else:
+        in_buf = io.BytesIO(docx_input)
+
+    tag_map = {
+        'SERVICIO O COMPRA': 'SERVICIO_O_COMPRA',
+        'RAZON SOCIAL CLIENTE': 'RAZON_SOCIAL_CLIENTE',
+        'RUC CLIENTE': 'RUC_CLIENTE',
+        'PUNTO PARTIDA': 'PUNTO_PARTIDA',
+        'TIPO DE RESIDUO': 'TIPO_DE_RESIDUO',
+        'F. EMISION': 'FECHA_EMISION',
+        'F.EMISION': 'FECHA_EMISION',
+        'FECHA EMISION': 'FECHA_EMISION',
+        'DIRECCION EMPRESA': 'DIRECCION_EMPRESA',
+        'DIRECCION LLEGADA': 'DIRECCION_LLEGADA',
+        'EMPRESA 2': 'EMPRESA_2',
+        'REGISTRO 2': 'REGISTRO_2',
+        'RAZON SOCIAL': 'RAZON_SOCIAL',
+        'RUC GENERADOR': 'RUC_GENERADOR'
+    }
+
+    out_buf = io.BytesIO()
+    try:
+        in_buf.seek(0)
+        with zipfile.ZipFile(in_buf, 'r') as zin, zipfile.ZipFile(out_buf, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                content = zin.read(item.filename)
+                if item.filename.startswith('word/') and item.filename.endswith('.xml'):
+                    xml_text = content.decode('utf-8', errors='ignore')
+                    
+                    def replace_tag(match):
+                        full_match = match.group(0)
+                        tag_body = match.group(1).strip()
+                        if tag_body in tag_map:
+                            return f"{{{{{tag_map[tag_body]}}}}}"
+                        if any(s in tag_body for s in [' ', '\t']) and not any(kw in tag_body.lower() for kw in [' if ', ' for ', ' in ', '|', '==', '!=', 'elif', 'else']):
+                            cleaned = re.sub(r'[\.\s]+', '_', tag_body).strip('_')
+                            return f"{{{{{cleaned}}}}}"
+                        return full_match
+
+                    xml_clean = re.sub(r'\{\{([^}]+)\}\}', replace_tag, xml_text)
+                    content = xml_clean.encode('utf-8')
+                zout.writestr(item, content)
+                
+        out_buf.seek(0)
+        return out_buf
+    except Exception:
+        in_buf.seek(0)
+        return in_buf
