@@ -11,42 +11,47 @@ from datetime import datetime, timedelta
 # Importamos ÚNICAMENTE el motor de Vertex (eliminamos la función vieja)
 from src.services.vertex_service import procesar_guia_ia_vertex
 
-# --- MEJORA: Importaciones de Google Service con autorecarga y protección contra desfase de módulos en caliente ---
+# --- MEJORA: Autorecarga y protección contra desfase de módulos en caliente en Streamlit Cloud ---
 import sys
 import importlib
 
+# Forzar recarga de submódulos locales si ya están en memoria para garantizar código fresco tras git push
+for _m in ['src.config.settings', 'src.utils.document_utils', 'src.utils.format_utils', 'src.services.google_service']:
+    if _m in sys.modules:
+        try:
+            importlib.reload(sys.modules[_m])
+        except Exception:
+            pass
+
 try:
     import src.services.google_service as _gs_mod
-    if not hasattr(_gs_mod, 'obtener_carpeta_guias') or not hasattr(_gs_mod, 'guardar_guia_en_drive'):
-        _gs_mod = importlib.reload(_gs_mod)
-        
-    obtener_servicios = _gs_mod.obtener_servicios
-    subir_a_drive = _gs_mod.subir_a_drive
-    obtener_plantilla_drive = _gs_mod.obtener_plantilla_drive
-    subir_modelo_a_drive = _gs_mod.subir_modelo_a_drive
-    obtener_mapa_plantillas_drive = _gs_mod.obtener_mapa_plantillas_drive
-    obtener_datos_empresas_desde_sheets = _gs_mod.obtener_datos_empresas_desde_sheets
-    registrar_en_control = _gs_mod.registrar_en_control
-    leer_sheet_seguro = _gs_mod.leer_sheet_seguro
-    obtener_catalogo_guias = _gs_mod.obtener_catalogo_guias
-    buscar_guias_repositorio = _gs_mod.buscar_guias_repositorio
-    descargar_guias_drive = _gs_mod.descargar_guias_drive
-    actualizar_bitacora_guias = _gs_mod.actualizar_bitacora_guias
-    buscar_actualizar_guia = _gs_mod.buscar_actualizar_guia
-    buscar_guias_asociadas_para_unir = _gs_mod.buscar_guias_asociadas_para_unir
-    descargar_archivo_drive_por_id_o_nombre = _gs_mod.descargar_archivo_drive_por_id_o_nombre
-    unir_tres_documentos_pdf = _gs_mod.unir_tres_documentos_pdf
-    subir_pdf_a_drive = _gs_mod.subir_pdf_a_drive
-    actualizar_link_pdf_historial = _gs_mod.actualizar_link_pdf_historial
-    extraer_id_drive = _gs_mod.extraer_id_drive
-    obtener_catalogo_servicios_por_categoria = _gs_mod.obtener_catalogo_servicios_por_categoria
-    convertir_docx_a_pdf = _gs_mod.convertir_docx_a_pdf
-    buscar_datos_certificado_en_historial = _gs_mod.buscar_datos_certificado_en_historial
-    sobrescribir_o_subir_pdf_drive = _gs_mod.sobrescribir_o_subir_pdf_drive
-    registrar_edicion_en_historial = _gs_mod.registrar_edicion_en_historial
-    obtener_info_revision_documento_drive = _gs_mod.obtener_info_revision_documento_drive
-    obtener_configuracion_empresas = _gs_mod.obtener_configuracion_empresas
-    buscar_config_empresa = _gs_mod.buscar_config_empresa
+    obtener_servicios = getattr(_gs_mod, 'obtener_servicios', None)
+    subir_a_drive = getattr(_gs_mod, 'subir_a_drive', None)
+    obtener_plantilla_drive = getattr(_gs_mod, 'obtener_plantilla_drive', None)
+    subir_modelo_a_drive = getattr(_gs_mod, 'subir_modelo_a_drive', None)
+    obtener_mapa_plantillas_drive = getattr(_gs_mod, 'obtener_mapa_plantillas_drive', None)
+    obtener_datos_empresas_desde_sheets = getattr(_gs_mod, 'obtener_datos_empresas_desde_sheets', None)
+    registrar_en_control = getattr(_gs_mod, 'registrar_en_control', None)
+    leer_sheet_seguro = getattr(_gs_mod, 'leer_sheet_seguro', None)
+    obtener_catalogo_guias = getattr(_gs_mod, 'obtener_catalogo_guias', None)
+    buscar_guias_repositorio = getattr(_gs_mod, 'buscar_guias_repositorio', None)
+    descargar_guias_drive = getattr(_gs_mod, 'descargar_guias_drive', None)
+    actualizar_bitacora_guias = getattr(_gs_mod, 'actualizar_bitacora_guias', None)
+    buscar_actualizar_guia = getattr(_gs_mod, 'buscar_actualizar_guia', None)
+    buscar_guias_asociadas_para_unir = getattr(_gs_mod, 'buscar_guias_asociadas_para_unir', None)
+    descargar_archivo_drive_por_id_o_nombre = getattr(_gs_mod, 'descargar_archivo_drive_por_id_o_nombre', None)
+    unir_tres_documentos_pdf = getattr(_gs_mod, 'unir_tres_documentos_pdf', None)
+    subir_pdf_a_drive = getattr(_gs_mod, 'subir_pdf_a_drive', None)
+    actualizar_link_pdf_historial = getattr(_gs_mod, 'actualizar_link_pdf_historial', None)
+    extraer_id_drive = getattr(_gs_mod, 'extraer_id_drive', None)
+    obtener_catalogo_servicios_por_categoria = getattr(_gs_mod, 'obtener_catalogo_servicios_por_categoria', None)
+    convertir_docx_a_pdf = getattr(_gs_mod, 'convertir_docx_a_pdf', None)
+    buscar_datos_certificado_en_historial = getattr(_gs_mod, 'buscar_datos_certificado_en_historial', None)
+    sobrescribir_o_subir_pdf_drive = getattr(_gs_mod, 'sobrescribir_o_subir_pdf_drive', None)
+    registrar_edicion_en_historial = getattr(_gs_mod, 'registrar_edicion_en_historial', None)
+    obtener_info_revision_documento_drive = getattr(_gs_mod, 'obtener_info_revision_documento_drive', None)
+    obtener_configuracion_empresas = getattr(_gs_mod, 'obtener_configuracion_empresas', None)
+    buscar_config_empresa = getattr(_gs_mod, 'buscar_config_empresa', None)
     obtener_sheet_sigersol_destino = getattr(_gs_mod, 'obtener_sheet_sigersol_destino', lambda em=None, cl=None: "10fES_h_4c8AdwaAAa46nuhTwbhNoifhCMzagCPI_4HI")
     obtener_carpeta_guias = getattr(_gs_mod, 'obtener_carpeta_guias', lambda emp, tg='hechas': "")
     guardar_guia_en_drive = getattr(_gs_mod, 'guardar_guia_en_drive', lambda *a, **k: {'ok': False, 'error': 'Función de respaldo no disponible'})
@@ -58,13 +63,75 @@ except Exception as err_import:
 
 try:
     import src.config.settings as _settings_mod
-    if not hasattr(_settings_mod, 'CARPETAS_GUIAS'):
-        importlib.reload(_settings_mod)
+    PLANTILLAS = getattr(_settings_mod, 'PLANTILLAS', {})
+    CARPETAS_DESTINO = getattr(_settings_mod, 'CARPETAS_DESTINO', {})
 except Exception:
-    pass
+    PLANTILLAS, CARPETAS_DESTINO = {}, {}
 
-from src.config.settings import PLANTILLAS, CARPETAS_DESTINO # <-- Añade esto
-from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf, sanitizar_tags_docx
+try:
+    import src.utils.document_utils as _doc_utils_mod
+    inyectar_tabla_en_docx = _doc_utils_mod.inyectar_tabla_en_docx
+    sustituir_certificado_en_pdf = _doc_utils_mod.sustituir_certificado_en_pdf
+    sanitizar_tags_docx = getattr(_doc_utils_mod, 'sanitizar_tags_docx', None)
+except Exception:
+    from src.utils.document_utils import inyectar_tabla_en_docx, sustituir_certificado_en_pdf
+    sanitizar_tags_docx = None
+
+if sanitizar_tags_docx is None:
+    def sanitizar_tags_docx(docx_input):
+        import zipfile
+        import re
+        if isinstance(docx_input, (bytes, bytearray)):
+            in_buf = io.BytesIO(docx_input)
+        elif hasattr(docx_input, 'getvalue'):
+            in_buf = io.BytesIO(docx_input.getvalue())
+        elif hasattr(docx_input, 'read'):
+            try: docx_input.seek(0)
+            except Exception: pass
+            in_buf = io.BytesIO(docx_input.read())
+        else:
+            in_buf = io.BytesIO(docx_input)
+        tag_map = {
+            'SERVICIO O COMPRA': 'SERVICIO_O_COMPRA',
+            'RAZON SOCIAL CLIENTE': 'RAZON_SOCIAL_CLIENTE',
+            'RUC CLIENTE': 'RUC_CLIENTE',
+            'PUNTO PARTIDA': 'PUNTO_PARTIDA',
+            'TIPO DE RESIDUO': 'TIPO_DE_RESIDUO',
+            'F. EMISION': 'FECHA_EMISION',
+            'F.EMISION': 'FECHA_EMISION',
+            'FECHA EMISION': 'FECHA_EMISION',
+            'DIRECCION EMPRESA': 'DIRECCION_EMPRESA',
+            'DIRECCION LLEGADA': 'DIRECCION_LLEGADA',
+            'EMPRESA 2': 'EMPRESA_2',
+            'REGISTRO 2': 'REGISTRO_2',
+            'RAZON SOCIAL': 'RAZON_SOCIAL',
+            'RUC GENERADOR': 'RUC_GENERADOR'
+        }
+        out_buf = io.BytesIO()
+        try:
+            in_buf.seek(0)
+            with zipfile.ZipFile(in_buf, 'r') as zin, zipfile.ZipFile(out_buf, 'w', compression=zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    content = zin.read(item.filename)
+                    if item.filename.startswith('word/') and item.filename.endswith('.xml'):
+                        xml_text = content.decode('utf-8', errors='ignore')
+                        def replace_tag(match):
+                            full_match = match.group(0)
+                            tag_body = match.group(1).strip()
+                            if tag_body in tag_map:
+                                return f"{{{{{tag_map[tag_body]}}}}}"
+                            if any(s in tag_body for s in [' ', '\t']) and not any(kw in tag_body.lower() for kw in [' if ', ' for ', ' in ', '|', '==', '!=', 'elif', 'else']):
+                                cleaned = re.sub(r'[\.\s]+', '_', tag_body).strip('_')
+                                return f"{{{{{cleaned}}}}}"
+                            return full_match
+                        xml_clean = re.sub(r'\{\{([^}]+)\}\}', replace_tag, xml_text)
+                        content = xml_clean.encode('utf-8')
+                    zout.writestr(item, content)
+            out_buf.seek(0)
+            return out_buf
+        except Exception:
+            in_buf.seek(0)
+            return in_buf
 from src.utils.format_utils import (
     limpiar_monto, formato_inteligente, normalizar_fecha, 
     limpiar_descripcion, formatear_guia, limpiar_guia_o_factura, obtener_fin_de_mes,

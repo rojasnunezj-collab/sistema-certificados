@@ -262,8 +262,11 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
                 dl = MediaIoBaseDownload(fh, req)
                 done = False
                 while not done: _, done = dl.next_chunk()
-                from src.utils.document_utils import sanitizar_tags_docx
-                fh = sanitizar_tags_docx(fh)
+                try:
+                    from src.utils.document_utils import sanitizar_tags_docx
+                    fh = sanitizar_tags_docx(fh)
+                except Exception:
+                    pass
                 fh.seek(0)
                 return fh
         except Exception as e_cfg:
@@ -307,8 +310,11 @@ def obtener_plantilla_drive(empresa_nombre, tipo_certificado, drive_service):
     while done is False:
         status, done = downloader.next_chunk()
         
-    from src.utils.document_utils import sanitizar_tags_docx
-    fh = sanitizar_tags_docx(fh)
+    try:
+        from src.utils.document_utils import sanitizar_tags_docx
+        fh = sanitizar_tags_docx(fh)
+    except Exception:
+        pass
     fh.seek(0)
     return fh
 
